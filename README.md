@@ -4,9 +4,9 @@ Phone X iOS 16.7.16 (20H392) firmware in QEMU on Linux.
 
 ## Local use
 
-Place your own iPhone X iOS 16.7.16 IPSW in `firmware/`, then run `./setup.sh`; alternatively use `./setup.sh /path/to/your.ipsw`. The setup script extracts your files, prepares the SDK and support programs, and builds the local system images. Apple firmware and generated images are never bundled in the public repository.
+Place your own iPhone X iOS 16.7.16 IPSW in `firmware/`, then run `./setup.sh`;  use `./setup.sh /path/to/your.ipsw` Please only use this if you own an iPhone X 
 
-`./run.sh` starts QEMU's native GTK display with zoom-to-fit, four guest CPUs and 9 GiB mapped guest RAM, without a session time limit. Set `QEMU_SMP`, `QEMU_RAM_GB` or `VM_DISPLAY` to override these. ARM-on-x86 uses TCG; the CPU is emulated. 
+`./run.sh` starts QEMU's native GTK display with zoom-to-fit, four guest CPUs and 9 GiB mapped guest RAM, w Set `QEMU_SMP`, `QEMU_RAM_GB` or `VM_DISPLAY` to change these. ARM-on-x86 uses TCG; the CPU is emulated. 
 
 ##warning
 Only tested on Fedora Linux with a  Ryzen 7 7435HS, 16 GiB RAM, RTX 4060.
