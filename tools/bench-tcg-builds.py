@@ -17,6 +17,8 @@ parser.add_argument('candidate',type=Path)
 parser.add_argument('--baseline',default=shutil.which('qemu-aarch64'))
 parser.add_argument('--cpu',type=int,help='Pin only the benchmark children to one allowed host CPU')
 parser.add_argument('--output',type=Path,required=True)
+parser.add_argument('--targets',type=int,choices=(0,1024,4096),default=0,
+                    help='Add many indirect-call targets to measure translation-cache pressure')
 args=parser.parse_args()
 if args.cpu is not None and args.cpu not in os.sched_getaffinity(0):
     parser.error('--cpu is not in the allowed host affinity')
@@ -34,15 +36,18 @@ logs=args.output.with_suffix('.logs');logs.mkdir(exist_ok=True)
 source=ROOT/'tools/tcg-cpu-bench.c'
 pattern=re.compile(r'^tcg-cpu: workload=(\w+) sample=(\d+) elapsed_us=(\d+) checksum=(\d+)$',re.M)
 expected=None
+work_names={'dependent','indirect','memory'}
+if args.targets:
+    work_names.add('many_targets')
 def run(command,label):
     pin=(lambda:os.sched_setaffinity(0,{args.cpu})) if args.cpu is not None else None
     result=subprocess.run(command,check=True,text=True,capture_output=True,timeout=180,preexec_fn=pin)
     (logs/f'{label}.log').write_text(result.stdout+result.stderr)
     records=[(name,int(sample),int(elapsed),int(checksum)) for name,sample,elapsed,checksum in pattern.findall(result.stdout)]
-    if len(records)!=24 or {name for name,_,_,_ in records}!={'dependent','indirect','memory'}:
+    if len(records)!=8*len(work_names) or {name for name,_,_,_ in records}!=work_names:
         raise RuntimeError(f'Incomplete benchmark output: {label}')
     checksums={}
-    for name in ('dependent','indirect','memory'):
+    for name in sorted(work_names):
         rows=[row for row in records if row[0]==name]
         if sorted(row[1] for row in rows)!=list(range(8)) or len({row[3] for row in rows})!=1:
             raise RuntimeError(f'Invalid samples/checksums: {label}/{name}')
@@ -53,10 +58,29 @@ def run(command,label):
 
 with tempfile.TemporaryDirectory(prefix='tcg-benchmark-',dir=args.output.parent) as directory:
     native=Path(directory)/'native';arm=Path(directory)/'arm64'
-    subprocess.run(['cc','-O2','-Wall','-Wextra','-Werror',str(source),'-o',str(native)],check=True)
+    extra=[]
+    generated=None
+    if args.targets:
+        generated=Path(directory)/'tcg-many-targets.inc'
+        lines=[]
+        for i in range(args.targets):
+            constant=((i+1)*0x9e3779b97f4a7c15)&((1<<64)-1)
+            body=f'uint64_t v=(x^UINT64_C(0x{constant:016x}))*UINT64_C(0xbf58476d1ce4e5b9);'
+            if i%3==1:
+                body+='v^=v>>17;'
+            elif i%3==2:
+                body+='v=(v<<11)|(v>>53);'
+            lines.append(f'__attribute__((noinline)) static uint64_t wide_{i}(uint64_t x)'
+                         f'{{{body}return v+UINT64_C({i*2+1});}}')
+        lines.append('static work_fn volatile many_steps[]={'+','.join(f'wide_{i}' for i in range(args.targets))+'};')
+        lines.append('__attribute__((noinline)) static uint64_t dispatch_many(uint64_t x){'
+                     f'for(unsigned i=0;i<1000000;i++)x=many_steps[(x>>16)&{args.targets-1}](x);return x;}}')
+        generated.write_text('\n'.join(lines)+'\n')
+        extra=['-DIOS_KVM_MANY_TARGETS','-I',directory]
+    subprocess.run(['cc','-O2','-Wall','-Wextra','-Werror',*extra,str(source),'-o',str(native)],check=True)
     subprocess.run(['clang','--target=aarch64-linux-gnu','-O2','-Wall','-Wextra','-Werror',
                     '-ffreestanding','-fno-stack-protector','-nostdlib','-static','-fuse-ld=lld',
-                    '-DIOS_KVM_FREESTANDING',str(source),'-Wl,-e,_start','-o',str(arm)],check=True)
+                    '-DIOS_KVM_FREESTANDING',*extra,str(source),'-Wl,-e,_start','-o',str(arm)],check=True)
     _,expected=run([str(native)],'native-reference')
     phases=[];values={name:{} for name in executables}
     for number,label in enumerate(('baseline','candidate','candidate','baseline')):
@@ -73,6 +97,8 @@ with tempfile.TemporaryDirectory(prefix='tcg-benchmark-',dir=args.output.parent)
         baseline=statistics.median(values['baseline'][name]);candidate=statistics.median(values['candidate'][name])
         summary[name]={'baseline_us':baseline,'candidate_us':candidate,'speed_ratio':round(baseline/candidate,4)}
     receipt={'schema':1,'kind':'AArch64 user-mode calculations; no VM','cpu':'cortex-a76','host_cpu':args.cpu,
+             'indirect_target_count':args.targets,
+             'generated_sha256':hashlib.sha256(generated.read_bytes()).hexdigest() if generated else None,
              'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),'checksums':expected,
              'emulators':{name:{'path':str(path),'version':versions[name],
                  'sha256':hashlib.sha256(path.read_bytes()).hexdigest()} for name,path in executables.items()},

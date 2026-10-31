@@ -1,0 +1,7 @@
+diff --git a/accel/tcg/tb-jmp-cache.h b/accel/tcg/tb-jmp-cache.h
+--- a/accel/tcg/tb-jmp-cache.h
++++ b/accel/tcg/tb-jmp-cache.h
+@@ -15,2 +15,2 @@
+-#define TB_JMP_CACHE_BITS 12
++#define TB_JMP_CACHE_BITS 16
+ #define TB_JMP_CACHE_SIZE (1 << TB_JMP_CACHE_BITS)

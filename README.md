@@ -42,6 +42,8 @@ Opacity-first IOSurface uploads convert pixels with unaligned-safe word rotation
 
 `python3 tools/bench-tcg-builds.py /path/to/candidate/qemu-aarch64 --output .local/cpu-comparison.json` compares user-mode emulator builds without booting a VM. It checks arithmetic, indirect-call and memory-workload results against a native reference, then runs alternating baseline/candidate phases. `--cpu N` pins only benchmark children to an allowed host CPU. System-emulator binaries are rejected. Results do not establish full-system iOS speed; the normal launcher continues to use the installed system QEMU.
 
+Add `--targets 4096` to exercise a larger indirect-call working set. The optional [QEMU jump-cache experiment](patches/README.md) includes the pinned source patch, build recipe and invalidation checks. It is not enabled by default; workload results are mixed and full-system validation is pending.
+
 `kern.ios_kvm_timer_floor_us` is an experimental CPU timer knob in the custom kernel. Its default is zero, preserving normal deadlines. No timing change is enabled by default, and no performance gain is claimed for it until measured.
 
 Apple firmware, extracted system files and generated device identity data are local inputs and are not distributed in this repository.

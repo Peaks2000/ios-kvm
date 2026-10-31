@@ -45,6 +45,9 @@ __attribute__((noinline)) static uint64_t dispatch(uint64_t x) {
     for(unsigned i=0;i<1000000;i++)x=steps[x&3](x);
     return x;
 }
+#ifdef IOS_KVM_MANY_TARGETS
+#include "tcg-many-targets.inc"
+#endif
 __attribute__((noinline)) static uint64_t chase(uint64_t x) {
     uint32_t at=(uint32_t)x;uint64_t sum=0;
     for(unsigned i=0;i<8000000;i++){at=memory[at];sum+=at;}
@@ -52,9 +55,17 @@ __attribute__((noinline)) static uint64_t chase(uint64_t x) {
 }
 static int run(void) {
     for(uint32_t i=0;i<(1<<20);i++)memory[i]=(i*1664525U+1013904223U)&((1<<20)-1);
-    work_fn functions[]={dependent,dispatch,chase};
-    const char *names[]={"dependent","indirect","memory"};
-    for(unsigned work=0;work<3;work++)for(unsigned sample=0;sample<8;sample++) {
+    work_fn functions[]={dependent,dispatch,chase
+#ifdef IOS_KVM_MANY_TARGETS
+        ,dispatch_many
+#endif
+    };
+    const char *names[]={"dependent","indirect","memory"
+#ifdef IOS_KVM_MANY_TARGETS
+        ,"many_targets"
+#endif
+    };
+    for(unsigned work=0;work<sizeof(functions)/sizeof(functions[0]);work++)for(unsigned sample=0;sample<8;sample++) {
         uint64_t began=now(),checksum=functions[work](17),elapsed=now()-began;sink=checksum;
         say("tcg-cpu: workload=");say(names[work]);say(" sample=");number(sample);
         say(" elapsed_us=");number(elapsed);say(" checksum=");number(checksum);say("\n");
