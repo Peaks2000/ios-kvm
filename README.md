@@ -36,6 +36,8 @@ Backdrop snapshots copy only the enabled scissor rectangle, keeping the original
 
 IOSurface change detection uses XXH64 instead of the original serial word hash, and includes trailing bytes that the old loop missed. Run `python3 tools/test-surface-fingerprint.py` for correctness, reference-library comparison when installed, and timing. `--arm` also runs a freestanding ARM calculation through QEMU user mode; it starts no VM. In one alternating generic-ARM build test, a 4.9 MB fingerprint took about0.59ms versus1.16–1.17ms previously. This measures only hashing; full iOS CPU/UI performance remains unverified.
 
+Opacity-first IOSurface uploads convert pixels with unaligned-safe word rotations/byte swaps. `python3 tools/test-surface-pixels.py --arm` checks both channel orders, alignment, untouched guards and flipped rows, then compares the old/new conversion in standalone ARM user mode without starting a VM. The 750×1624 conversion step measured about4.82–4.88ms previously versus4.22–4.26ms with the new helper; this is not a whole-frame or app benchmark. Texture storage reuse remains an experiment: native results were mixed, so normal texture allocation behavior is unchanged.
+
 `kern.ios_kvm_timer_floor_us` is an experimental CPU timer knob in the custom kernel. Its default is zero, preserving normal deadlines. No timing change is enabled by default, and no performance gain is claimed for it until measured.
 
 Apple firmware, extracted system files and generated device identity data are local inputs and are not distributed in this repository.

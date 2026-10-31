@@ -75,6 +75,7 @@
 
 #include "hakios.gl.h"
 #include "surface_fingerprint.h"
+#include "surface_pixels.h"
 
 /* ---- OpenGL ES: the types, the few names used here, the library's functions --------------------- */
 
@@ -710,12 +711,7 @@ surface_to_texture(struct eagl *e, struct image *image)
 				continue;
 			}
 			/* opacity, blue, green, red in memory: into the order OpenGL ES was told */
-			for (size_t at = 0; at + 4 <= used && at + 4 <= row; at += 4) {
-				to[at] = from[at + (image->format == GL_BGRA ? 1 : 3)];
-				to[at + 1] = from[at + 2];
-				to[at + 2] = from[at + (image->format == GL_BGRA ? 3 : 1)];
-				to[at + 3] = from[at];
-			}
+			surface_alpha_first_row(to, from, (used < row ? used : row) / 4, image->format == GL_BGRA);
 		}
 		base = flipped;
 	}
