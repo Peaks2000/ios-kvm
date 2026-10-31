@@ -2297,7 +2297,21 @@ backdrop_begin(struct eagl *e, GLuint program)
 			e->behind_height = height;
 		}
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, draw_fbo);
-		glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
+		/* BACKDROP fetches the current fragment's window coordinate. Scissoring
+		 * rejects every fragment outside this box, so those pixels need no snapshot.
+		 * Keep texture dimensions/coordinates unchanged for texelFetch. */
+		GLint left = 0, bottom = 0, right = width, top = height;
+		if (glIsEnabled(GL_SCISSOR_TEST)) {
+			GLint box[4];
+			glGetIntegerv(GL_SCISSOR_BOX, box);
+			int64_t x1 = (int64_t)box[0] + box[2], y1 = (int64_t)box[1] + box[3];
+			left = box[0] > 0 ? box[0] : 0;
+			bottom = box[1] > 0 ? box[1] : 0;
+			if (x1 < right) right = x1 < 0 ? 0 : (GLint)x1;
+			if (y1 < top) top = y1 < 0 ? 0 : (GLint)y1;
+		}
+		if (right > left && top > bottom)
+			glCopyTexSubImage2D(GL_TEXTURE_2D, 0, left, bottom, left, bottom, right - left, top - bottom);
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, read_fbo);
 		glUniform1i(location, 7);
 		e->behind_bound = true;
