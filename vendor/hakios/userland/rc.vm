@@ -1,0 +1,3 @@
+# Restore this owner's local first-boot snapshot before starting system services.
+/var/jb/usr/bin/tar -xf /redwood/share/session/var-firstboot.tar -C /private/var
+exec /sbin/launchd.darwin

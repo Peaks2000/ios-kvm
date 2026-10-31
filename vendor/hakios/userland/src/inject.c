@@ -52,7 +52,9 @@
 extern const void *_dyld_get_shared_cache_range(size_t *length);
 
 #define CACHE_BASE 0x180000000UL                /* where the cache was built to be, before the slide */
+#ifndef HAKIOS_GL
 #define HAKIOS_GL "/redwood/lib/libhakios.gl.dylib"
+#endif
 
 static uintptr_t slide;
 
@@ -1042,6 +1044,12 @@ opengl_es(void)
 	io_service_t gpu;
 	void *library;
 	int wanted = -1, told = 0;
+
+#ifdef IOS_KVM_VIRGL
+	setenv("GALLIUM_DRIVER", "virpipe", 1);
+	wanted = 1;
+	told = 1;
+#endif
 
 	if (access(HAKIOS_GL, R_OK) != 0) {
 		return;                                 /* (an image built without it) */

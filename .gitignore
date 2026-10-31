@@ -30,3 +30,4 @@ vendor/hakios/qemu/esp/
 vendor/hakios/qemu/vars.fd
 vendor/hakios/ssh/
 .local/
+firmware/

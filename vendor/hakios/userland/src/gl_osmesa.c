@@ -51,7 +51,8 @@ struct hakios_gl *
 hakios_gl_create(int version)
 {
 	const int attributes[] = {
-		OSMESA_FORMAT, OSMESA_RGBA, OSMESA_DEPTH_BITS, 24, OSMESA_STENCIL_BITS, 8,
+		/* The dummy window is never drawn into; real FBOs supply their own attachments. */
+		OSMESA_FORMAT, OSMESA_RGBA, OSMESA_DEPTH_BITS, 0, OSMESA_STENCIL_BITS, 0,
 		OSMESA_PROFILE, OSMESA_ES_PROFILE, OSMESA_CONTEXT_MAJOR_VERSION, version, OSMESA_CONTEXT_MINOR_VERSION, 0,
 		0
 	};
@@ -103,7 +104,9 @@ hakios_gl_surface_texture(struct hakios_gl *gl, uint32_t surface)
 
 		asked = 1;
 		image_target = (void (*)(unsigned, void *))OSMesaGetProcAddress("glEGLImageTargetTexture2DOES");
-		software = renderer == NULL || strstr(renderer, "softpipe") != NULL || strstr(renderer, "llvmpipe") != NULL;
+		/* VirGL renders on the host but cannot import a guest IOSurface ID as an EGLImage. */
+		software = renderer == NULL || strstr(renderer, "softpipe") != NULL || strstr(renderer, "llvmpipe") != NULL ||
+		    strstr(renderer, "virgl") != NULL;
 	}
 	if (image_target == NULL || software) {
 		return 0;

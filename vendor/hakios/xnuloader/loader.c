@@ -30,7 +30,7 @@ struct payload_entry { char name[16]; uint32_t size; uint32_t reserved; };
  * offset inside the kernel's memory window, once; it then survives any
  * number of kernel runs (nothing writes to it: the root is read-only).
  */
-#define RESIDENT_RD_OFFSET  0x08000000ULL
+#define RESIDENT_RD_OFFSET  0x10000000ULL        /* room for the VM's restored data support image */
 #define RESIDENT_RD_RESERVE 0x30000000ULL         /* RAM that must remain for the kernel itself */
 #define PAGE_SIZE_MAX       0x4000ULL
 
@@ -39,7 +39,7 @@ struct payload_entry { char name[16]; uint32_t size; uint32_t reserved; };
 #define PANIC_LOG_SIZE      0x80000u
 #define NVRAM_BANK_SIZE     0x2000u
 #define PANIC_LOG_BASE      (PAYLOAD_BASE + PAYLOAD_MAX_SIZE - 0x100000ULL)
-#define PAYLOAD_MAX_SIZE    0x04000000ULL         /* RAM reserved for the payload in the UEFI memory map */
+#define PAYLOAD_MAX_SIZE    0x08000000ULL         /* QEMU: support image plus the owner's restore archive */
 
 /* ------------------------------------------------------------------------ */
 /* XNU structures (pexpert/pexpert/arm64/boot.h, mach-o/loader.h)           */

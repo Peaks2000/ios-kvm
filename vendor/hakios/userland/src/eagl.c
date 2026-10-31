@@ -804,8 +804,15 @@ target_to_surface(struct eagl *e, struct image *image)
 		if (!image->invert) {
 			glReadPixels(0, 0, image->width, image->height, GL_BGRA, GL_UNSIGNED_BYTE, base);
 		} else {
-			for (GLsizei y = 0; y < image->height; y++) {
-				glReadPixels(0, y, image->width, 1, GL_BGRA, GL_UNSIGNED_BYTE, base + row * (size_t)(image->height - 1 - y));
+			/* A row-at-a-time read is thousands of GPU/transport round trips on a tall screen. */
+			uint8_t *pixels = malloc(row * (size_t)image->height);
+			if (pixels != NULL) {
+				glReadPixels(0, 0, image->width, image->height, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
+				for (GLsizei y = 0; y < image->height; y++) {
+					memcpy(base + row * (size_t)(image->height - 1 - y), pixels + row * (size_t)y,
+					    (size_t)image->width * 4);
+				}
+				free(pixels);
 			}
 		}
 		glPixelStorei(GL_PACK_ROW_LENGTH, 0);

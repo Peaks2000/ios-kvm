@@ -47,7 +47,7 @@ IMG=${IMG:-userland/system.apfs}
 ROOT=${ROOT:-userland/root.apfs}
 [ -f "$IMG" ] && [ -f "$ROOT" ] || { echo "run-darwin.sh: $IMG or $ROOT is missing (userland/build.sh makes them)"; exit 1; }
 SECS=${1:-60}; shift
-RAM_BASE=0x40000000 RD_ADDR=0xFC000000
+RAM_BASE=0x40000000 RD_ADDR=0x108000000
 RAM_GB=${QEMU_RAM_GB:-7}
 RAM_SIZE=$((RAM_GB << 30)) FILE_SIZE=$((12 << 30))
 INSTANCE=${QEMU_INSTANCE:-$(cat qemu/instance 2>/dev/null || echo 0)}
@@ -58,7 +58,8 @@ if [ "${AVAILABLE:-9999}" -lt 3000 ] && [ -z "$QEMU_FORCE" ]; then
 	exit 1
 fi
 
-if [ ! -f qemu/ram.img ] || [ "$IMG" -nt qemu/ram.img ]; then
+LAYOUT="${RD_ADDR}:$(stat -c %s "$IMG")"
+if [ ! -f qemu/ram.img ] || [ "$IMG" -nt qemu/ram.img ] || [ "$(cat qemu/ram.layout 2>/dev/null)" != "$LAYOUT" ]; then
 	python3 - "$IMG" qemu/ram.img $((RD_ADDR - RAM_BASE)) $FILE_SIZE <<'PY' || exit 1
 import os, sys
 src = os.open(sys.argv[1], os.O_RDONLY)
@@ -69,6 +70,7 @@ total, done = os.fstat(src).st_size, 0
 while done < total:
     done += os.copy_file_range(src, dst, total - done, done, offset + done)
 PY
+	printf '%s\n' "$LAYOUT" > qemu/ram.layout
 fi
 NET=()
 if [ -n "$QEMU_NET" ] && [ "$QEMU_NET" != 0 ]; then
@@ -85,9 +87,10 @@ if qemu-system-aarch64 -device help 2>/dev/null | grep -q '"virtio-sound-device"
 	SOUND+=(-device virtio-sound-device,audiodev=snd,streams=1)   # one stream: output, no microphone of the host
 	CMDLINE="virtio_sound=1 $CMDLINE"
 fi
-xnuloader/mkpayload.py -o qemu/payload.bin kernel=$K ramdisk=$ROOT --rdres "$(printf '%x' "$(stat -c %s "$IMG")")" \
+xnuloader/mkpayload.py -o qemu/payload.bin kernel=$K ramdisk=$ROOT --physbase f8000000 --rdres "$(printf '%x' "$(stat -c %s "$IMG")")" \
 	--cmdline "loader_return_after=$SECS epoch=$(date +%s) virtio_input=1 $CMDLINE" >/dev/null || exit 1
-QEMU_MEM=${RAM_GB}G exec qemu/run.sh $((SECS + 40)) \
+LIMIT=$((SECS + 40)); [ "$SECS" = 0 ] && LIMIT=0
+QEMU_MEM=${RAM_GB}G exec qemu/run.sh "$LIMIT" \
 	-object memory-backend-file,id=ram,size=$RAM_SIZE,mem-path="$PWD/qemu/ram.img",share=off \
 	-machine memory-backend=ram \
 	-global virtio-mmio.force-legacy=false -device virtio-tablet-device -device virtio-keyboard-device "${NET[@]}" "${SOUND[@]}" \
