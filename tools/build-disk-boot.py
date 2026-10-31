@@ -3,6 +3,7 @@
 from pathlib import Path
 import shutil
 import subprocess
+import json
 
 root = Path(__file__).resolve().parents[1]
 source = root / 'vendor/hakios/userland/root'
@@ -16,3 +17,9 @@ for directory in ('flash', 'private/preboot', 'redwood', 'dev'):
 shutil.copy2(root / '.local/support/init', stage / 'sbin/launchd')
 subprocess.run(['python3', str(root / 'vendor/hakios/tools/apfs/mkapfs.py'), '-z', '--plain', 'fw',
                 '-o', str(root / '.local/disk-boot.apfs'), 'redwood=' + str(stage)], check=True)
+gpu_boot = any('libios-kvm-gpu.dylib' in line.split()[0] and 'backboardd' in line.split()[1:]
+               for line in (source / 'etc/inject.conf').read_text().splitlines() if line.split())
+manifest = root / '.local/boot-features.json'
+temporary = manifest.with_suffix('.tmp')
+temporary.write_text(json.dumps({'schema': 1, 'disk_system': True, 'gpu_boot': gpu_boot}) + '\n')
+temporary.replace(manifest)

@@ -2,6 +2,10 @@
 set -euo pipefail
 cd "$(dirname "$0")/../vendor/hakios"
 mkdir -p logs
+if [ "${IOS_KVM_SESSION_MANAGED:-0}" != 1 ] && [ -f ../../.local/boot-features.json ] &&
+   python3 -c 'import json,sys; sys.exit(not json.load(open("../../.local/boot-features.json")).get("gpu_boot"))'; then
+    exec python3 ../../tools/run-session.py "${1:-0}"
+fi
 if [ "${QEMU_SYSTEM_DISK:-1}" = 1 ] &&
    ! rg -q '^multi-virtio-block-v1$' ../../.local/kernel-features 2>/dev/null; then
     echo 'Rebuild disk-boot support: bash tools/build-kernel.sh && bash tools/build.sh' >&2

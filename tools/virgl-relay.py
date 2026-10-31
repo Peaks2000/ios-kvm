@@ -4,8 +4,14 @@ import asyncio
 import ctypes
 import struct
 import sys
+import argparse
 
-compressed = '--compressed' in sys.argv
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--compressed', action='store_true')
+parser.add_argument('--port', type=int)
+parser.add_argument('--socket-path', default='/tmp/ios-kvm-virgl.sock')
+options = parser.parse_args()
+compressed = options.compressed
 lz4 = ctypes.CDLL('liblz4.so.1')
 lz4.LZ4_compressBound.argtypes = [ctypes.c_int]
 lz4.LZ4_compress_default.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
@@ -14,7 +20,7 @@ lz4.LZ4_compress_default.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_
 async def client(reader, writer):
     remote_writer = None
     try:
-        remote_reader, remote_writer = await asyncio.open_unix_connection('/tmp/ios-kvm-virgl.sock')
+        remote_reader, remote_writer = await asyncio.open_unix_connection(options.socket_path)
 
         async def copy(source, target):
             while data := await source.read(256 << 10):
@@ -60,7 +66,7 @@ async def client(reader, writer):
 
 
 async def main():
-    server = await asyncio.start_server(client, '127.0.0.1', 6712 if compressed else 6711)
+    server = await asyncio.start_server(client, '127.0.0.1', options.port or (6712 if compressed else 6711))
     async with server:
         await server.serve_forever()
 
