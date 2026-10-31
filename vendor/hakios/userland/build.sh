@@ -74,7 +74,7 @@
 #   CHECK=1          check every image (every container) as it is made: apfsck has to find it clean and
 #                    the kernel's apfs_lib has to read every volume back as the directory it was made of
 #                    (../tools/apfs/check-image.sh; the system image takes a few minutes more)
-set -e
+set -e -o pipefail
 # a copy of a tree that shares its files' data: hard links (Linux), clones of the files (macOS's APFS, whose cp has no -l)
 linkcopy() { if [ "$(uname)" = Darwin ]; then cp -cRp "$1" "$2"; else cp -al "$1" "$2"; fi; }
 cd "$(dirname "$(readlink -f "$0")")"
@@ -150,6 +150,13 @@ else
 		$CC -Ilibmini $LD -o obj/$prog.new src/$prog.c obj/mini.o obj/start.o
 		# keep the old file (and its time stamp) when nothing changed: system.apfs depends on stage0
 		cmp -s obj/$prog.new obj/$prog && rm obj/$prog.new || mv obj/$prog.new obj/$prog
+	done
+fi
+
+# Locally rebuilt support takes precedence over the imported bootstrap binaries.
+if [ -n "${SUPPORT_DIR:-}" ]; then
+	for f in "$SUPPORT_DIR"/*.dylib; do
+		[ -f "$f" ] && cp "$f" obj/
 	done
 fi
 

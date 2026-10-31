@@ -490,19 +490,19 @@ static struct replacement {
 	bool instance;                  /* an instance method, not a class method */
 	bool done;
 } replacements[] = {
-	{ "BWCoreImageFilterRenderer", "prewarmPortraitFilterVersion:semanticStyleFilters:", 0x1a2115c0cUL,
+	{ "BWCoreImageFilterRenderer", "prewarmPortraitFilterVersion:semanticStyleFilters:", 0x1a2165b8cUL,
 	  (IMP)prewarm_portrait_filter, NULL, false, false },
-	{ "BWFigCaptureDeviceVendor", "sharedCaptureDeviceVendor", 0x1a1ef0d04UL,
+	{ "BWFigCaptureDeviceVendor", "sharedCaptureDeviceVendor", 0x1a1f40c84UL,
 	  (IMP)shared_vendor, &original_shared_vendor, false, false },
-	{ "BWAudioSourceNode", "start:", 0x1a1eefa18UL, (IMP)audio_source_start, &original_audio_source_start, true, false },
-	{ "FigVideoCaptureConnectionConfiguration", "videoStabilizationMethod", 0x1a1e99ef8UL,
+	{ "BWAudioSourceNode", "start:", 0x1a1f3f998UL, (IMP)audio_source_start, &original_audio_source_start, true, false },
+	{ "FigVideoCaptureConnectionConfiguration", "videoStabilizationMethod", 0x1a1ee9e78UL,
 	  (IMP)video_stabilization_method, NULL, true, false },
-	{ "FigVideoCaptureConnectionConfiguration", "videoStabilizationType", 0x1a20d8f48UL,
+	{ "FigVideoCaptureConnectionConfiguration", "videoStabilizationType", 0x1a2128ec8UL,
 	  (IMP)video_stabilization_type, NULL, true, false },
-	{ "FigCaptureStillImageSettings", "qualityPrioritization", 0x1a1f533dcUL,
+	{ "FigCaptureStillImageSettings", "qualityPrioritization", 0x1a1fa335cUL,
 	  (IMP)quality_prioritization, &original_quality_prioritization, true, false },
-	{ "BWGNRNode", "renderSampleBuffer:forInput:", 0x1a1ec83b8UL, (IMP)gnr_render, NULL, true, false },
-	{ "BWNodeOutput", "emitSampleBuffer:", 0x1a1ea37e0UL, (IMP)emit_sample_buffer, &original_emit_sample_buffer, true, false },
+	{ "BWGNRNode", "renderSampleBuffer:forInput:", 0x1a1f18338UL, (IMP)gnr_render, NULL, true, false },
+	{ "BWNodeOutput", "emitSampleBuffer:", 0x1a1ef3760UL, (IMP)emit_sample_buffer, &original_emit_sample_buffer, true, false },
 };
 
 static void

@@ -2,7 +2,13 @@
 
 An independent project to run the user's iPhone X iOS 16.7.16 (20H392) firmware in QEMU on Linux.
 
-The target is a usable iOS interface, SSH, Sileo, GPU acceleration and reliable virtual Ethernet. These are development objectives, not claims of working features. The initial experiment reached early XNU startup using ios-sweet; the complete iOS system has not yet booted here.
+The target is a usable iOS interface, SSH, Sileo, GPU acceleration and reliable virtual Ethernet. The VM currently runs launchd, supports root SSH and DHCP Ethernet with working DNS/HTTPS, and renders the Apple boot progress screen. The home screen, Sileo operation and GPU acceleration remain in development. See [STATUS.md](STATUS.md) for evidence and remaining work.
+
+## Local use
+
+After preparing the local firmware images, `bash tools/build.sh` rebuilds the support libraries and image. `bash tools/run.sh` starts a bounded VM session (30 minutes by default), with four emulated CPU cores. Set `QEMU_SMP=1` to use the initial single-core configuration.
+
+The display is available over VNC at `127.0.0.1:5901`; `bash tools/ssh.sh` connects to root SSH through `127.0.0.1:2222` using a dedicated local key. There is no password login. The current VM data volume is temporary and is recreated on cold boot.
 
 Apple firmware, extracted system files and generated device identity data are local inputs and are not distributed in this repository.
 

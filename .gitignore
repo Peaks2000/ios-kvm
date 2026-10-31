@@ -29,3 +29,4 @@ vendor/hakios/jb/
 vendor/hakios/qemu/esp/
 vendor/hakios/qemu/vars.fd
 vendor/hakios/ssh/
+.local/
