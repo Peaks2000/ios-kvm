@@ -50,6 +50,20 @@ class Selection(unittest.TestCase):
         self.assertFalse(result['selected']['hardware'])
         self.assertEqual(result['selected']['renderer'],software['renderer'])
 
+    def test_failed_shader_pixels_skip_hardware_and_use_validated_software(self):
+        failure={'error':'Textured shader/blend/padded BGRA validation failed'}
+        software={'ok':True,'renderer':'llvmpipe (LLVM test)','render_node':None,
+                  'shader_pixels':64,'padded_bgra':True}
+        with patch.object(gpu_host,'build_probe',return_value=Path('/unused')), \
+             patch.object(gpu_host,'probe',side_effect=[([{'index':0}],None),
+                 (None,failure),(None,failure),(software,None)]), \
+             patch.object(gpu_host,'software_environment',return_value={'LIBGL_ALWAYS_SOFTWARE':'1'}), \
+             patch.object(gpu_host,'probe_vtest',return_value={'ok':True}) as vtest:
+            result=gpu_host.select_gpu()
+        self.assertFalse(result['selected']['hardware'])
+        self.assertEqual(len(result['failures']),2)
+        vtest.assert_called_once_with(software)
+
     def test_explicit_unavailable_device_never_silently_falls_back(self):
         with patch.object(gpu_host,'build_probe',return_value=Path('/unused')), \
              patch.object(gpu_host,'probe',return_value=([{'index':0,'render_node':'/dev/dri/renderD128'}],None)) as probe:

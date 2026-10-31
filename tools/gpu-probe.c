@@ -25,6 +25,79 @@ static int failed(const char *message)
     printf(",\"egl_error\":%u}\n",eglGetError()); return 1;
 }
 
+static GLuint shader(GLenum kind, const char *source)
+{
+    GLuint result=glCreateShader(kind);
+    glShaderSource(result,1,&source,NULL); glCompileShader(result);
+    GLint ok=0; glGetShaderiv(result,GL_COMPILE_STATUS,&ok);
+    if (!ok) {
+        char log[2048]; glGetShaderInfoLog(result,sizeof(log),NULL,log);
+        fprintf(stderr,"GPU probe shader: %s\n",log);
+        glDeleteShader(result); return 0;
+    }
+    return result;
+}
+
+/* Exercise texture sampling, an offscreen RGBA target, blending, orientation and
+ * padded BGRA readback. A working clear alone does not establish these features. */
+static int render_check(void)
+{
+    GLuint vs=shader(GL_VERTEX_SHADER,"#version 330 core\nout vec2 uv;\n"
+        "void main(){vec2 p=vec2((gl_VertexID<<1)&2,gl_VertexID&2);"
+        "uv=p;gl_Position=vec4(p*2.-1.,0.,1.);}");
+    GLuint fs=shader(GL_FRAGMENT_SHADER,"#version 330 core\nin vec2 uv;out vec4 result;"
+        "uniform sampler2D image;void main(){result=texture(image,uv);}");
+    if (!vs || !fs) return 0;
+    GLuint program=glCreateProgram();
+    glAttachShader(program,vs); glAttachShader(program,fs); glLinkProgram(program);
+    GLint ok=0; glGetProgramiv(program,GL_LINK_STATUS,&ok);
+    glDeleteShader(vs); glDeleteShader(fs);
+    if (!ok) {
+        char log[2048]; glGetProgramInfoLog(program,sizeof(log),NULL,log);
+        fprintf(stderr,"GPU probe program: %s\n",log);
+        glDeleteProgram(program); return 0;
+    }
+    GLuint texture[2], fbo, vao;
+    const unsigned char source[]={255,0,0,128, 0,255,0,128, 0,0,255,128, 255,255,255,128};
+    glGenTextures(2,texture); glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D,texture[0]);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,2,2,0,GL_RGBA,GL_UNSIGNED_BYTE,source);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+    glBindTexture(GL_TEXTURE_2D,texture[1]);
+    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,8,8,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
+    glGenFramebuffers(1,&fbo); glBindFramebuffer(GL_FRAMEBUFFER,fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,texture[1],0);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE) return 0;
+    glViewport(0,0,8,8); glClearColor(.2,.4,.6,1); glClear(GL_COLOR_BUFFER_BIT);
+    glUseProgram(program); glUniform1i(glGetUniformLocation(program,"image"),0);
+    glBindTexture(GL_TEXTURE_2D,texture[0]);
+    glGenVertexArrays(1,&vao); glBindVertexArray(vao);
+    glEnable(GL_BLEND);
+    glBlendFuncSeparate(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA,GL_ONE,GL_ONE_MINUS_SRC_ALPHA);
+    glDrawArrays(GL_TRIANGLES,0,3);
+    unsigned char pixels[8*10*4]; memset(pixels,0xa5,sizeof(pixels));
+    glPixelStorei(GL_PACK_ROW_LENGTH,10);
+    glReadPixels(0,0,8,8,GL_BGRA,GL_UNSIGNED_BYTE,pixels);
+    int valid=glGetError()==GL_NO_ERROR;
+    for (int y=0;y<8;y++) {
+        for (int x=0;x<8;x++) {
+            int quadrant=(y>=4)*2+(x>=4);
+            for (int c=0;c<4;c++) {
+                int rgba=c==0 ? 2 : c==2 ? 0 : c;
+                const int background[]={51,102,153,255};
+                int expected=rgba==3 ? 255 :
+                    (source[quadrant*4+rgba]*128+background[rgba]*127+127)/255;
+                if (abs(pixels[(y*10+x)*4+c]-expected)>2) valid=0;
+            }
+        }
+        for (int i=8*4;i<10*4;i++) if (pixels[y*10*4+i]!=0xa5) valid=0;
+    }
+    glDeleteVertexArrays(1,&vao); glDeleteFramebuffers(1,&fbo);
+    glDeleteTextures(2,texture); glDeleteProgram(program);
+    return valid;
+}
+
 int main(int argc, char **argv)
 {
     PFNEGLQUERYDEVICESEXTPROC query=(void *)eglGetProcAddress("eglQueryDevicesEXT");
@@ -78,11 +151,12 @@ int main(int argc, char **argv)
     const int expected[]={64,128,191,255};
     for (int i=0;i<4;i++) if (abs(pixel[i]-expected[i])>1) return failed("OpenGL pixel validation failed");
     if (glGetError()!=GL_NO_ERROR) return failed("OpenGL error during pixel validation");
+    if (!render_check()) return failed("Textured shader/blend/padded BGRA validation failed");
     fputs("{\"ok\":true,\"vendor\":",stdout); string((const char *)glGetString(GL_VENDOR));
     fputs(",\"renderer\":",stdout); string((const char *)glGetString(GL_RENDERER));
     fputs(",\"version\":",stdout); string((const char *)glGetString(GL_VERSION));
     fputs(",\"render_node\":",stdout); string(node);
-    printf(",\"pixel\":[%u,%u,%u,%u]}\n",pixel[0],pixel[1],pixel[2],pixel[3]);
+    printf(",\"pixel\":[%u,%u,%u,%u],\"shader_pixels\":64,\"padded_bgra\":true}\n",pixel[0],pixel[1],pixel[2],pixel[3]);
     eglMakeCurrent(display,EGL_NO_SURFACE,EGL_NO_SURFACE,EGL_NO_CONTEXT);
     eglDestroySurface(display,surface); eglDestroyContext(display,context); eglTerminate(display);
     return 0;
