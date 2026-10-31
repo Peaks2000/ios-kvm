@@ -12,6 +12,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dlfcn.h>
+#include <pthread.h>
 
 #include "hakios.gl.h"
 
@@ -46,6 +48,36 @@ struct hakios_gl {
 	OSMesaContext context;
 	unsigned char window[WINDOW * WINDOW * 4];
 };
+
+static pthread_once_t readback_once = PTHREAD_ONCE_INIT;
+static void *(*readback_pin)(void *, uint32_t);
+static void (*readback_release)(void *);
+static void *(*readback_set)(void *);
+
+static void readback_functions(void)
+{
+	readback_pin = dlsym(RTLD_DEFAULT, "ios_kvm_readback_lease_create");
+	readback_release = dlsym(RTLD_DEFAULT, "ios_kvm_readback_lease_destroy");
+	readback_set = dlsym(RTLD_DEFAULT, "ios_kvm_readback_lease_set");
+}
+
+void *hakios_gl_readback_pin(void *address, uint32_t bytes)
+{
+	const char *enabled = getenv("IOS_KVM_DIRECT_READBACK");
+	if (!enabled || strcmp(enabled, "1")) return NULL;
+	pthread_once(&readback_once, readback_functions);
+	return readback_pin && readback_release && readback_set ? readback_pin(address, bytes) : NULL;
+}
+
+void hakios_gl_readback_release(void *lease)
+{
+	if (lease && readback_release) readback_release(lease);
+}
+
+void *hakios_gl_readback_set(void *lease)
+{
+	return readback_set ? readback_set(lease) : NULL;
+}
 
 struct hakios_gl *
 hakios_gl_create(int version)

@@ -650,7 +650,16 @@ if [ -f $DARWIN/system.manifest ] && [ -f $CACHE/dyld_shared_cache_arm64 ] &&
 	done
 	# zlib where it saves room, as Apple keeps the root (a small file whole in its attribute): 5.4 GB of
 	# files in 2.5 GB, what fits into the phone's RAM beside Darwin
-	python3 ../tools/apfs/mkapfs.py -z -o system.apfs System=sysroot,manifest=$DARWIN/system.manifest | tail -1
+	# Keep the inode used by a running VM intact until a replacement is ready.
+	system_build_dir=$(mktemp -d .system-build.XXXXXX)
+	if (set -o pipefail; python3 ../tools/apfs/mkapfs.py -z -o "$system_build_dir/system.apfs" \
+	    System=sysroot,manifest=$DARWIN/system.manifest | tail -1); then
+		mv -f "$system_build_dir/system.apfs" system.apfs
+		rmdir "$system_build_dir"
+	else
+		rm -rf "$system_build_dir"
+		exit 1
+	fi
 	[ -z "$CHECK" ] || ../tools/apfs/check-image.sh system.apfs System=sysroot,manifest=$DARWIN/system.manifest
 	rm -rf sysroot
 	printf '%s\n' "$SYSTEM_LAYOUT" > system.layout

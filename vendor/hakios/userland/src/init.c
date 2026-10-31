@@ -270,6 +270,32 @@ flash_root(const char *dev)
 	flash_root_mode = 1;
 }
 
+/* Our already-integrated system image on a read-only virtio disk, without preloading it into RAM. */
+static int
+system_disk_root(const char *device)
+{
+	char spec[96];
+	struct stat st;
+	if (strlen(device) + 6 > sizeof(spec)) return 0;
+	strcpy(spec, "/dev/");
+	strcpy(spec + 5, device);
+	if (mount("apfs", "/flash", MNT_RDONLY, spec) != 0) {
+		printf("ios-kvm: cannot mount system disk %s: %s\n", spec, strerror(errno));
+		return 0;
+	}
+	if (stat("/flash/private/preboot", &st) != 0 && !synthetic_dir("/flash/private/preboot")) return 0;
+	const char *request = "/flash private/preboot";
+	if (sysctlbyname("kern.hakios_switch_root", NULL, NULL, (void *)request, strlen(request)) != 0) {
+		printf("ios-kvm: cannot select disk system root: %s\n", strerror(errno));
+		return 0;
+	}
+	chdir("/");
+	base = "/redwood";
+	if (!bind_dir("/private/preboot", "/redwood")) return 0;
+	printf("ios-kvm: system image on %s, read only; support image on /redwood\n", spec);
+	return 1;
+}
+
 static void
 check(int ok, const char *what)
 {
@@ -1556,6 +1582,14 @@ main(int argc, char **argv, char **envp)
 	show_system();
 	/* The first persistent bootstrap copy also needs more than 1024 vnodes. */
 	configure_vnodes();
+	{
+		const char *disk = boot_arg("system_disk");
+		if (disk != NULL && !system_disk_root(disk)) {
+			printf("ios-kvm: refusing to continue without the selected system disk\n");
+			reboot(RB_HALT);
+			return 1;
+		}
+	}
 	mount_writable();
 	{
 		const char *required = boot_arg("var_hfs_required");

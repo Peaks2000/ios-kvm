@@ -18,12 +18,12 @@ else
 fi
 [ -f "$IPSW" ] || { echo 'IPSW not found.' >&2; exit 1; }
 missing=()
-for tool in python3 git cc make clang clang++ lld-link llvm-nm qemu-system-aarch64 7z lz4 curl; do
+for tool in python3 git cc make clang clang++ lld-link llvm-nm qemu-system-aarch64 7z lz4 curl flex bison m4 perl autoreconf automake mkfs.hfsplus; do
     command -v "$tool" >/dev/null || missing+=("$tool")
 done
 if [ "${#missing[@]}" != 0 ]; then
     echo "Missing tools: ${missing[*]}" >&2
-    echo 'Fedora dependencies: clang lld llvm qemu-system-aarch64 qemu-ui-gtk edk2-aarch64 7zip lz4 gcc make git curl python3-fonttools' >&2
+    echo 'Fedora dependencies: clang lld llvm qemu-system-aarch64 qemu-ui-gtk edk2-aarch64 7zip lz4 gcc make git curl python3-fonttools flex bison m4 perl autoconf automake ncurses-devel libuuid-devel; also provide mkfs.hfsplus (hfsprogs).' >&2
     exit 1
 fi
 python3 -c 'import fontTools' || { echo 'Install python3-fonttools.' >&2; exit 1; }
@@ -50,5 +50,7 @@ fi
     [ -f ssh/ssh_host_ed25519_key ] || ssh-keygen -q -t ed25519 -N '' -C ios-kvm-host -f ssh/ssh_host_ed25519_key
     cp ssh/client_ed25519.pub ssh/authorized_keys
 )
+bash "$ROOT/tools/build-kernel.sh"
+python3 "$ROOT/tools/setup-storage.py"
 bash "$ROOT/tools/build.sh"
 echo 'Local iOS images built. Run ./run.sh to start the VM.'

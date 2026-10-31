@@ -1060,6 +1060,7 @@ opengl_es(void)
 	}
 	if (sysctlbyname("kern.bootargs", arguments, &size, NULL, 0) == 0) {
 #ifdef IOS_KVM_VIRGL
+		setenv("IOS_KVM_DIRECT_READBACK", strstr(arguments, "gldirect=0") ? "0" : "1", 1);
 		if (strstr(arguments, "gpu_shared=1") != NULL) {
 			setenv("IOS_KVM_SHARED", "1", 1);
 		}

@@ -225,6 +225,7 @@ static unsigned group_covered, group_laid, group_flattened;    /* (glframes=1) t
 struct image {
 	GLuint texture;
 	IOSurfaceRef surface;
+	void *readback_lease;            /* tied to this retained IOSurface, released before its memory can go */
 	bool target;                    /* drawn into (attachImage) rather than shown (texImageIOSurface) */
 	bool invert, drawn;
 	bool shared;                    /* the texture is the surface's memory: nothing to copy */
@@ -542,6 +543,7 @@ image_new(struct eagl *e, GLuint texture, IOSurfaceRef surface)
 		}
 		image = &e->images[e->image_count++];
 	} else {
+		hakios_gl_readback_release(image->readback_lease);
 		if (image->mirror != 0) {
 			glDeleteTextures(1, &image->mirror);
 		}
@@ -559,6 +561,7 @@ image_forget(struct eagl *e, GLuint texture)
 	struct image *image = image_of(e, texture);
 
 	if (image != NULL) {
+		hakios_gl_readback_release(image->readback_lease);
 		if (image->mirror != 0) {
 			glDeleteTextures(1, &image->mirror);
 		}
@@ -806,6 +809,13 @@ target_to_surface(struct eagl *e, struct image *image)
 	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, image->texture, 0);
 	if (IOSurfaceLock(surface, 0, NULL) == 0) {
 		base = IOSurfaceGetBaseAddress(surface);
+		if (!image->readback_lease && image->width > 0 && image->height > 0 &&
+		    row >= (size_t)image->width * 4 && row <= (64u << 20) / (size_t)image->height) {
+			size_t span = row * (size_t)(image->height - 1) + (size_t)image->width * 4;
+			if (span <= IOSurfaceGetAllocSize(surface))
+				image->readback_lease = hakios_gl_readback_pin(base, (uint32_t)span);
+		}
+		void *previous_lease = image->readback_lease ? hakios_gl_readback_set(image->readback_lease) : NULL;
 		glPixelStorei(GL_PACK_ROW_LENGTH, (GLint)(row / 4));
 		glPixelStorei(GL_PACK_ALIGNMENT, 4);
 		if (!image->invert) {
@@ -833,6 +843,7 @@ target_to_surface(struct eagl *e, struct image *image)
 			glBindFramebuffer(GL_READ_FRAMEBUFFER, e->flip_framebuffer);
 			glReadPixels(0, 0, image->width, image->height, GL_BGRA, GL_UNSIGNED_BYTE, base);
 		}
+		if (image->readback_lease) hakios_gl_readback_set(previous_lease);
 		glPixelStorei(GL_PACK_ROW_LENGTH, 0);
 		IOSurfaceUnlock(surface, 0, NULL);
 	}
@@ -4119,6 +4130,10 @@ my_dealloc(id self, SEL selector)
 	if (e != NULL) {
 		say("hakios-gl: the context goes\n");
 		summary(e);
+		for (unsigned i = 0; i < e->image_count; i++) {
+			hakios_gl_readback_release(e->images[i].readback_lease);
+			CFRelease(e->images[i].surface);
+		}
 		for (unsigned i = 0; i < sizeof(contexts) / sizeof(contexts[0]); i++) {
 			if (contexts[i] == e) {
 				contexts[i] = NULL;

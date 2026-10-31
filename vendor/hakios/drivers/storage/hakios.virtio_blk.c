@@ -50,6 +50,8 @@ extern uint64_t kvtophys(vm_offset_t va);
 #define VIRTIO_VERSION          0x004
 #define VIRTIO_DEVICE_ID        0x008
 #define VIRTIO_DRIVER_FEATURES  0x020
+#define VIRTIO_DEVICE_FEATURES  0x010
+#define VIRTIO_DEVICE_FEATURES_SEL 0x014
 #define VIRTIO_DRIVER_FEATURES_SEL 0x024
 #define VIRTIO_QUEUE_SEL        0x030
 #define VIRTIO_QUEUE_NUM_MAX    0x034
@@ -122,6 +124,7 @@ struct blk_req_hdr {
 #define OFFSET_STATUS           0x0c40
 
 struct blk_device {
+	bool                 ready, writable;
 	vm_offset_t          regs;
 	vm_offset_t          page;
 	uint64_t             page_phys;
@@ -138,10 +141,16 @@ struct blk_device {
 };
 
 static LCK_GRP_DECLARE(blk_lck_grp, "hakios-virtio-blk");
-static struct blk_device blk_dev;
-static bool blk_ready;
+#define BLK_DEVICES 4
+static struct blk_device blk_devs[BLK_DEVICES];
 static bool blk_writable;               /* virtio_blk=2 */
 static int blk_bmajor = -1, blk_cmajor = -1;
+
+static struct blk_device *blk_for_dev(dev_t dev)
+{
+	unsigned unit = minor(dev);
+	return unit < BLK_DEVICES ? &blk_devs[unit] : NULL;
+}
 
 /* One of this driver's devices: every request is a trip through the hypervisor */
 bool
@@ -196,7 +205,7 @@ blk_io(struct blk_device *d, bool write, uint64_t offset, void *data, size_t len
 
 	lck_mtx_lock(&d->lock);
 	/* a request that waited for the lock while an earlier one timed out must not start on a queue left in that state */
-	if (!blk_ready) {
+	if (!d->ready) {
 		lck_mtx_unlock(&d->lock);
 		return ENXIO;
 	}
@@ -257,7 +266,7 @@ blk_io(struct blk_device *d, bool write, uint64_t offset, void *data, size_t len
 			 * answer would land in it, and the next request would take this stale completion as
 			 * its own. So the device is off from now on.
 			 */
-			blk_ready = false;
+			d->ready = false;
 			lck_mtx_unlock(&d->lock);
 			return EIO;
 		}
@@ -281,10 +290,11 @@ blk_io(struct blk_device *d, bool write, uint64_t offset, void *data, size_t len
 static int
 blk_dev_open(__unused dev_t dev, int flags, __unused int devtype, __unused proc_t p)
 {
-	if (!blk_ready) {
+	struct blk_device *d = blk_for_dev(dev);
+	if (d == NULL || !d->ready) {
 		return ENXIO;
 	}
-	if ((flags & FWRITE) && !blk_writable) {
+	if ((flags & FWRITE) && !d->writable) {
 		return EROFS;
 	}
 	return 0;
@@ -300,17 +310,17 @@ blk_dev_close(__unused dev_t dev, __unused int flags, __unused int devtype,
 static void
 blk_dev_strategy(buf_t bp)
 {
-	struct blk_device *d = &blk_dev;
+	struct blk_device *d = blk_for_dev(buf_device(bp));
 	uint64_t offset;
 	size_t len;
 	int error;
 
-	if (!blk_ready) {
+	if (d == NULL || !d->ready) {
 		buf_seterror(bp, ENXIO);
 		buf_biodone(bp);
 		return;
 	}
-	if (!(buf_flags(bp) & B_READ) && !blk_writable) {
+	if (!(buf_flags(bp) & B_READ) && !d->writable) {
 		buf_seterror(bp, EROFS);         /* this device writes only with virtio_blk=2 */
 		buf_biodone(bp);
 		return;
@@ -365,9 +375,9 @@ static int
 blk_dev_ioctl(__unused dev_t dev, u_long cmd, caddr_t data, __unused int fflag,
     __unused proc_t p)
 {
-	struct blk_device *d = &blk_dev;
+	struct blk_device *d = blk_for_dev(dev);
 
-	if (!blk_ready) {
+	if (d == NULL || !d->ready) {
 		return ENXIO;
 	}
 	switch (cmd) {
@@ -389,7 +399,7 @@ blk_dev_ioctl(__unused dev_t dev, u_long cmd, caddr_t data, __unused int fflag,
 		*(uint64_t *)data = d->capacity;
 		return 0;
 	case DKIOCISWRITABLE:
-		*(uint32_t *)data = blk_writable;
+		*(uint32_t *)data = d->writable;
 		return 0;
 	case DKIOCGETMAXBLOCKCOUNTREAD:
 	case DKIOCGETMAXBLOCKCOUNTWRITE:
@@ -407,8 +417,8 @@ blk_dev_ioctl(__unused dev_t dev, u_long cmd, caddr_t data, __unused int fflag,
 static int
 blk_dev_size(dev_t dev)
 {
-	(void)dev;
-	return blk_ready ? VIRTIO_BLK_SECTOR : -1;
+	struct blk_device *d = blk_for_dev(dev);
+	return d != NULL && d->ready ? VIRTIO_BLK_SECTOR : -1;
 }
 
 static int
@@ -483,7 +493,10 @@ blk_attach(struct blk_device *d, int slot)
 	reg_write(d, VIRTIO_STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER);
 	/* nothing in the low half is wanted; bit 32 is VIRTIO_F_VERSION_1 */
 	reg_write(d, VIRTIO_DRIVER_FEATURES_SEL, 0);
-	reg_write(d, VIRTIO_DRIVER_FEATURES, 0);
+	reg_write(d, VIRTIO_DEVICE_FEATURES_SEL, 0);
+	uint32_t readonly_feature = reg_read(d, VIRTIO_DEVICE_FEATURES) & (1u << 5);
+	d->writable = blk_writable && !readonly_feature;
+	reg_write(d, VIRTIO_DRIVER_FEATURES, readonly_feature);
 	reg_write(d, VIRTIO_DRIVER_FEATURES_SEL, 1);
 	reg_write(d, VIRTIO_DRIVER_FEATURES, 1);
 	reg_write(d, VIRTIO_STATUS, STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_FEATURES_OK);
@@ -522,15 +535,20 @@ hakios_virtio_blk_init(void)
 {
 	uint32_t enabled = 0;
 	vm_offset_t bus;
-	struct blk_device *d = &blk_dev;
+	unsigned unit = 0;
 	int slot;
 
 	if (!PE_parse_boot_argn("virtio_blk", &enabled, sizeof(enabled)) || !enabled) {
 		return;
 	}
 	blk_writable = enabled == 2;
+	blk_bmajor = bdevsw_add(-1, &blk_bdevsw);
+	if (blk_bmajor < 0) { printf("virtio-blk: bdevsw_add failed\n"); return; }
+	blk_cmajor = cdevsw_add_with_bdev(-1, &blk_cdevsw, blk_bmajor);
+	if (blk_cmajor < 0) { printf("virtio-blk: cdevsw_add failed\n"); return; }
 	bus = ml_io_map(VIRTIO_BUS, VIRTIO_SLOTS * VIRTIO_SLOT_SIZE);
-	for (slot = 0; slot < VIRTIO_SLOTS; slot++) {
+	for (slot = 0; slot < VIRTIO_SLOTS && unit < BLK_DEVICES; slot++) {
+		struct blk_device *d = &blk_devs[unit];
 		d->regs = bus + (vm_offset_t)slot * VIRTIO_SLOT_SIZE;
 		if (reg_read(d, VIRTIO_MAGIC) != 0x74726976 ||
 		    reg_read(d, VIRTIO_DEVICE_ID) != VIRTIO_ID_BLOCK) {
@@ -546,28 +564,18 @@ hakios_virtio_blk_init(void)
 			lck_mtx_destroy(&d->lock, &blk_lck_grp);
 			continue;
 		}
-		blk_bmajor = bdevsw_add(-1, &blk_bdevsw);
-		if (blk_bmajor < 0) {
-			printf("virtio-blk: bdevsw_add failed\n");
-			return;
-		}
-		blk_cmajor = cdevsw_add_with_bdev(-1, &blk_cdevsw, blk_bmajor);
-		if (blk_cmajor < 0) {
-			printf("virtio-blk: cdevsw_add failed\n");
-			return;
-		}
-		if (devfs_make_node(makedev(blk_bmajor, 0), DEVFS_BLOCK, UID_ROOT,
-		    GID_OPERATOR, 0600, "rvblk0") == NULL ||
-		    devfs_make_node(makedev(blk_cmajor, 0), DEVFS_CHAR, UID_ROOT,
-		    GID_OPERATOR, 0600, "rrvblk0") == NULL) {
+		if (devfs_make_node(makedev(blk_bmajor, unit), DEVFS_BLOCK, UID_ROOT,
+		    GID_OPERATOR, 0600, "rvblk%u", unit) == NULL ||
+		    devfs_make_node(makedev(blk_cmajor, unit), DEVFS_CHAR, UID_ROOT,
+		    GID_OPERATOR, 0600, "rrvblk%u", unit) == NULL) {
 			printf("virtio-blk: devfs_make_node failed\n");
 			return;
 		}
-		blk_ready = true;
-		printf("virtio-blk: /dev/rvblk0 in slot %d, %llu sectors of %u (%llu MB)%s\n",
-		    slot, d->capacity, VIRTIO_BLK_SECTOR,
-		    d->capacity * VIRTIO_BLK_SECTOR / (1024 * 1024), blk_writable ? ", writable" : "");
-		return;
+		d->ready = true;
+		printf("virtio-blk: /dev/rvblk%u in slot %d, %llu sectors of %u (%llu MB)%s\n",
+		    unit, slot, d->capacity, VIRTIO_BLK_SECTOR,
+		    d->capacity * VIRTIO_BLK_SECTOR / (1024 * 1024), d->writable ? ", writable" : ", read only");
+		unit++;
 	}
-	printf("virtio-blk: no block device on the bus\n");
+	if (unit == 0) printf("virtio-blk: no block device on the bus\n");
 }

@@ -34,3 +34,4 @@ path.write_text('\n'.join(lines) + '\n')
 PY
     (cd userland; python3 ../tools/apfs/mkapfs.py -z --plain fw -o root.apfs redwood=root)
 fi
+python3 ../../tools/build-disk-boot.py

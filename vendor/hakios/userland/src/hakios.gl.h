@@ -11,6 +11,10 @@ struct hakios_gl *hakios_gl_create(int version);              /* a context of Op
 int hakios_gl_make_current(struct hakios_gl *gl);             /* ... the calling thread's (NULL: none); 0 on failure */
 void hakios_gl_destroy(struct hakios_gl *gl);
 const char *hakios_gl_library(void);                           /* for the log */
+/* The caller must keep the allocation alive until release; only an explicitly bound lease is used. */
+void *hakios_gl_readback_pin(void *address, uint32_t bytes);
+void hakios_gl_readback_release(void *lease);
+void *hakios_gl_readback_set(void *lease);
 
 /*
  * The texture bound to GL_TEXTURE_2D made of an IOSurface's own memory: what is drawn into the

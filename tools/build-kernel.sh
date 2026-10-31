@@ -47,3 +47,4 @@ if [ "$configuration" = RELEASE ]; then
     extra=(LDFLAGS_KERNEL_ONLY_CONFIG_RELEASEARM64=)
 fi
 bash tools/make-kernel.sh -j"$JOBS" KERNEL_CONFIGS="$configuration" "${extra[@]}"
+printf 'multi-virtio-block-v1\n' > "$root/.local/kernel-features"

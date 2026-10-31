@@ -46,10 +46,18 @@ fi
 IMG=${IMG:-userland/system.apfs}
 ROOT=${ROOT:-userland/root.apfs}
 [ -f "$IMG" ] && [ -f "$ROOT" ] || { echo "run-darwin.sh: $IMG or $ROOT is missing (userland/build.sh makes them)"; exit 1; }
+IMG=$(readlink -f "$IMG")
 SECS=${1:-60}; shift
 RAM_BASE=0x40000000 RD_ADDR=0x108000000
-RAM_GB=${QEMU_RAM_GB:-7}
-RAM_SIZE=$((RAM_GB << 30)) FILE_SIZE=$((12 << 30))
+RAM_GB=${QEMU_RAM_GB:-6}
+case "$RAM_GB" in ''|*[!0-9]*) echo 'QEMU_RAM_GB must be a positive integer.' >&2; exit 1 ;; esac
+[ "$RAM_GB" -gt 0 ] || exit 1
+RAM_SIZE=$((RAM_GB << 30)) FILE_SIZE=$RAM_SIZE
+SYSTEM_DISK=${QEMU_SYSTEM_DISK:-1}
+if [ "$SYSTEM_DISK" = 1 ]; then
+	ROOT=../../.local/disk-boot.apfs
+	[ -s "$ROOT" ] || { echo 'Run tools/build.sh to prepare the disk-backed boot image.' >&2; exit 1; }
+fi
 INSTANCE=${QEMU_INSTANCE:-$(cat qemu/instance 2>/dev/null || echo 0)}
 # an instance takes 2.5-3 GB of host memory; starting one that does not fit gets something killed
 AVAILABLE=$(awk '/^MemAvailable:/ { print int($2 / 1024) }' /proc/meminfo)
@@ -58,8 +66,14 @@ if [ "${AVAILABLE:-9999}" -lt 3000 ] && [ -z "$QEMU_FORCE" ]; then
 	exit 1
 fi
 
-LAYOUT="${RD_ADDR}:$(stat -c %s "$IMG")"
-if [ ! -f qemu/ram.img ] || [ "$IMG" -nt qemu/ram.img ] || [ "$(cat qemu/ram.layout 2>/dev/null)" != "$LAYOUT" ]; then
+LAYOUT="${RD_ADDR}:$(stat -c %s "$IMG"):$FILE_SIZE"
+[ "$SYSTEM_DISK" != 1 ] || LAYOUT="disk-system:$FILE_SIZE"
+if [ ! -f qemu/ram.img ] || [ "$(cat qemu/ram.layout 2>/dev/null)" != "$LAYOUT" ] ||
+   { [ "$SYSTEM_DISK" != 1 ] && [ "$IMG" -nt qemu/ram.img ]; }; then
+	if [ "$SYSTEM_DISK" = 1 ]; then
+		truncate -s 0 qemu/ram.img
+		truncate -s "$FILE_SIZE" qemu/ram.img
+	else
 	python3 - "$IMG" qemu/ram.img $((RD_ADDR - RAM_BASE)) $FILE_SIZE <<'PY' || exit 1
 import os, sys
 src = os.open(sys.argv[1], os.O_RDONLY)
@@ -70,6 +84,7 @@ total, done = os.fstat(src).st_size, 0
 while done < total:
     done += os.copy_file_range(src, dst, total - done, done, offset + done)
 PY
+	fi
 	printf '%s\n' "$LAYOUT" > qemu/ram.layout
 fi
 MEMORY_FILE="$PWD/qemu/ram.img"
@@ -113,9 +128,18 @@ if [ -n "${QEMU_DATA_IMAGE:-}" ]; then
 	[ -f "$QEMU_DATA_IMAGE" ] || { echo "Data disk does not exist: $QEMU_DATA_IMAGE" >&2; exit 1; }
 	[ -f hakios-kernel ] || { echo 'Persistent data needs the locally built HFS kernel.' >&2; exit 1; }
 	DATA=(-drive "file=$QEMU_DATA_IMAGE,format=raw,if=none,id=data,cache=writethrough" -device virtio-blk-device,drive=data)
-	CMDLINE="virtio_blk=2 var_hfs=rvblk0 var_hfs_required=1 $CMDLINE"
+	data_device=rvblk0
+	[ "$SYSTEM_DISK" != 1 ] || data_device=rvblk1
+	CMDLINE="virtio_blk=2 var_hfs=$data_device var_hfs_required=1 $CMDLINE"
 fi
-xnuloader/mkpayload.py -o qemu/payload.bin kernel=$K ramdisk=$ROOT --physbase f8000000 --rdres "$(printf '%x' "$(stat -c %s "$IMG")")" \
+RESIDENT=(--physbase f8000000 --rdres "$(printf '%x' "$(stat -c %s "$IMG")")")
+if [ "$SYSTEM_DISK" = 1 ]; then
+	# QEMU assigns MMIO slots backwards: the last disk is rvblk0, the data disk rvblk1.
+	DATA+=(-drive "file=$IMG,format=raw,if=none,id=system,readonly=on" -device virtio-blk-device,drive=system)
+	CMDLINE="virtio_blk=2 system_disk=rvblk0 $CMDLINE"
+	RESIDENT=()
+fi
+xnuloader/mkpayload.py -o qemu/payload.bin kernel=$K ramdisk=$ROOT "${RESIDENT[@]}" \
 	--cmdline "loader_return_after=$SECS epoch=$(date +%s) virtio_input=1 $CMDLINE" >/dev/null || exit 1
 LIMIT=$((SECS + 40)); [ "$SECS" = 0 ] && LIMIT=0
 QEMU_MEM=${RAM_GB}G exec qemu/run.sh "$LIMIT" \

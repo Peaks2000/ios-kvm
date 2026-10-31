@@ -2,6 +2,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/../vendor/hakios"
 mkdir -p logs
+if [ "${QEMU_SYSTEM_DISK:-1}" = 1 ] &&
+   ! rg -q '^multi-virtio-block-v1$' ../../.local/kernel-features 2>/dev/null; then
+    echo 'Rebuild disk-boot support: bash tools/build-kernel.sh && bash tools/build.sh' >&2
+    exit 1
+fi
 export QEMU_NET=1
 if [ -z "${AUDIO:-}" ]; then
     audio_drivers=$(qemu-system-aarch64 -audiodev help)
@@ -15,7 +20,7 @@ if [ -z "${AUDIO:-}" ]; then
         export AUDIO=none
     fi
 fi
-export QEMU_RAM_GB=${QEMU_RAM_GB:-9}
+export QEMU_RAM_GB=${QEMU_RAM_GB:-6}
 export QEMU_SMP=${QEMU_SMP:-4}
 export QEMU_TB_MB=${QEMU_TB_MB:-1024}
 scale=${IOS_KVM_SCALE:-2}

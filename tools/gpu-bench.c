@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <dlfcn.h>
 
 static uint64_t microseconds(void)
 {
@@ -40,13 +41,22 @@ static int run(int width, int height, int frames)
     uint8_t *pixels = malloc(bytes);
     if (!pixels) return 1;
     unsigned errors = 0;
+    void *lease = NULL;
+    void *(*set_lease)(void *) = dlsym(RTLD_DEFAULT, "ios_kvm_readback_lease_set");
+    void (*destroy_lease)(void *) = dlsym(RTLD_DEFAULT, "ios_kvm_readback_lease_destroy");
+    if (getenv("IOS_KVM_DIRECT_LEASE")) {
+        void *(*create)(void *, uint32_t) = dlsym(RTLD_DEFAULT, "ios_kvm_readback_lease_create");
+        if (!create || !set_lease || !destroy_lease || !(lease = create(pixels, bytes))) return 1;
+    }
     for (int frame = 0; frame < frames; frame++) {
         uint64_t start = microseconds();
         glClearColor((frame + 1) / 32.0f, 0.25f, 0.5f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         glFinish();
         uint64_t draw = microseconds();
+        void *previous = lease ? set_lease(lease) : NULL;
         glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+        if (lease) set_lease(previous);
         uint64_t read = microseconds();
         int expected[] = {((frame + 1) * 255 + 16) / 32, 64, 128, 255};
         size_t indices[] = {0, ((size_t)width * height / 2) * 4, bytes - 4};
@@ -58,6 +68,7 @@ static int run(int width, int height, int frames)
         printf("gpu-bench: frame=%d draw_us=%llu read_us=%llu errors=%u gl=%#x\n",
             frame, draw-start, read-draw, errors, error);
     }
+    if (lease) destroy_lease(lease);
     free(pixels);
     glDeleteFramebuffers(1, &framebuffer);
     glDeleteTextures(1, &texture);
@@ -75,6 +86,15 @@ static int flip_benchmark(void)
     const int width=750, height=1624, stride=(width+8)*4;
     uint8_t *pixels=malloc((size_t)stride*height), *temporary=malloc((size_t)stride*height);
     if (!pixels || !temporary) return 1;
+    void *leases[2] = {NULL, NULL};
+    void *(*set_lease)(void *) = dlsym(RTLD_DEFAULT, "ios_kvm_readback_lease_set");
+    void (*destroy_lease)(void *) = dlsym(RTLD_DEFAULT, "ios_kvm_readback_lease_destroy");
+    if (getenv("IOS_KVM_DIRECT_LEASE")) {
+        void *(*create)(void *, uint32_t) = dlsym(RTLD_DEFAULT, "ios_kvm_readback_lease_create");
+        uint32_t span = (height-1)*stride+width*4;
+        if (!create || !set_lease || !destroy_lease ||
+            !(leases[0]=create(temporary,span)) || !(leases[1]=create(pixels,span))) return 1;
+    }
     GLuint textures[2], fbos[2];
     glGenTextures(2,textures); glGenFramebuffers(2,fbos);
     for (int i=0;i<2;i++) {
@@ -89,6 +109,8 @@ static int flip_benchmark(void)
     unsigned errors=0;
     for (int frame=0;frame<20;frame++) {
         int gpu=frame%2;
+        memset(pixels,0xcd,(size_t)stride*height);
+        memset(temporary,0xcd,(size_t)stride*height);
         float red=(frame+1)/32.f;
         glBindFramebuffer(GL_FRAMEBUFFER,fbos[0]);
         glDisable(GL_SCISSOR_TEST); glClearColor(red,.25,.5,1); glClear(GL_COLOR_BUFFER_BIT);
@@ -96,6 +118,7 @@ static int flip_benchmark(void)
         glClearColor(red,.75,.5,1); glClear(GL_COLOR_BUFFER_BIT); glDisable(GL_SCISSOR_TEST);
         glFinish();
         uint64_t start=microseconds();
+        void *previous = leases[gpu] ? set_lease(leases[gpu]) : NULL;
         if (gpu) {
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER,fbos[1]);
             glBlitFramebuffer(0,0,width,height,0,height,width,0,GL_COLOR_BUFFER_BIT,GL_NEAREST);
@@ -106,7 +129,11 @@ static int flip_benchmark(void)
             for(int y=0;y<height;y++) memcpy(pixels+(size_t)(height-1-y)*stride,
                 temporary+(size_t)y*stride,width*4);
         }
+        if (leases[gpu]) set_lease(previous);
         uint64_t elapsed=microseconds()-start;
+        uint8_t *readback = gpu ? pixels : temporary;
+        for (int y=0;y<height;y++) for (int x=width*4;x<stride;x++)
+            if (readback[(size_t)y*stride+x] != 0xcd) errors++;
         int xs[]={0,width/2,width-1}, ys[]={0,height/4,height-1};
         for(int yi=0;yi<3;yi++) for(int xi=0;xi<3;xi++) {
             uint8_t *p=pixels+(size_t)ys[yi]*stride+xs[xi]*4;
@@ -116,12 +143,18 @@ static int flip_benchmark(void)
         GLenum error=glGetError(); if(error) errors++;
         printf("flip-bench: frame=%d gpu=%d us=%llu errors=%u gl=%#x\n",frame,gpu,elapsed,errors,error);
     }
+    for(int i=0;i<2;i++) if(leases[i]) destroy_lease(leases[i]);
     free(pixels); free(temporary); OSMesaDestroyContext(context);
     return errors?1:0;
 }
 
 int main(int argc, char **argv)
 {
+    if (argc > 1 && !strcmp(argv[1], "lease-cycles")) {
+        for (unsigned i=0;i<10;i++) if (run(256,128,4)) return 1;
+        puts("gpu-bench: 10 leased-buffer/context create/render/destroy cycles passed");
+        return 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "flip")) return flip_benchmark();
     if (argc > 1 && !strcmp(argv[1], "contexts")) {
         for (unsigned i = 0; i < 10; i++)

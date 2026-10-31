@@ -3,6 +3,7 @@
 from pathlib import Path
 import shutil
 import re
+import subprocess
 
 root = Path(__file__).resolve().parents[1]
 mesa = root / '.local/mesa-25.0.7/src/gallium/winsys/virgl/vtest'
@@ -66,3 +67,4 @@ edit(host / 'vtest_server.c', '   HANDLER(GET_CAPS,                send_caps,   
      '   [64] = {"IOS_KVM_SHARED_GET", vtest_ios_kvm_shared_get, true},\n'
      '   HANDLER(GET_CAPS,                send_caps,             false),')
 print('Prepared experimental shared-RAM GPU transfer')
+subprocess.run(['python3', str(root / 'tools/prepare-direct-readback.py')], check=True)
