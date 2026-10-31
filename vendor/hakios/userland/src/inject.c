@@ -42,6 +42,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/sysctl.h>
+#include <sys/qos.h>
 #include <signal.h>
 #include <sys/ucontext.h>
 #include <unistd.h>
@@ -912,6 +913,8 @@ input_thread(__unused void *arg)
 	int device;
 
 	pthread_setname_np("redwood input");
+	/* Touch delivery must not sit behind rendering or background widget work. */
+	pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
 	{
 		char arguments[1024] = "";
 		size_t size = sizeof(arguments) - 1;

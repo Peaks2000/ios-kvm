@@ -42,7 +42,7 @@ Opacity-first IOSurface uploads convert pixels with unaligned-safe word rotation
 
 `python3 tools/bench-tcg-builds.py /path/to/candidate/qemu-aarch64 --output .local/cpu-comparison.json` compares user-mode emulator builds without booting a VM. It checks arithmetic, indirect-call and memory-workload results against a native reference, then runs alternating baseline/candidate phases. `--cpu N` pins only benchmark children to an allowed host CPU. System-emulator binaries are rejected. Results do not establish full-system iOS speed; the normal launcher continues to use the installed system QEMU.
 
-Add `--targets 4096` to exercise a larger indirect-call working set. The optional [QEMU jump-cache experiment](patches/README.md) includes the pinned source patch, build recipe and invalidation checks. It is not enabled by default; workload results are mixed and full-system validation is pending.
+Add `--targets 4096` to exercise a larger indirect-call working set. The optional [QEMU jump-cache experiment](patches/README.md) includes the pinned source patch, build recipe and invalidation checks. It is not enabled by default; the live iOS reverse comparison did not reproduce the early apparent speedup.
 
 `QEMU_BINARY=/absolute/path/to/qemu-system-aarch64 ./run.sh` selects a custom emulator for both capability checks and the VM. To keep a local selection, write its absolute path on one line in `.local/qemu-binary`; remove that file to use system QEMU again. The environment variable overrides the local selection. The selected path is resolved before the launcher changes directories and is inherited by the managed session.
 
@@ -69,3 +69,13 @@ This project has its own repository and integration work. It is not affiliated w
 ## Planned device manager
 
 After the CPU/GPU and core VM work is stable, build a GUI to manage virtual devices and guide VM creation using each user's own IPSW, GPU detection, memory selection and persistent storage. Publish the application source in `ios-kvm` on GitHub. The owner's NAND and personal configuration remain separate in the intended private `PeaksiOS` repository.
+
+Pending consecutive touch movements for the same finger now coalesce in the kernel queue. Presses, releases and changes between fingers keep their order. This prevents a busy HID consumer from replaying a long trail of stale pointer positions; it does not make ARM emulation or GPU rendering faster. The bounded-queue overflow policy is unchanged. Run the queue checks with:
+
+```sh
+cc -O2 -Wall -Wextra -Werror -I vendor/hakios/xnu/files/bsd \
+  -I vendor/hakios/drivers/input tools/test-touch-queue.c -o .local/test-touch-queue
+.local/test-touch-queue
+```
+
+For frame/input diagnostics, boot with `CMDLINE='touch_lat=1 cpuload=250' ./run.sh`. After a gesture, `python3 tools/capture-kernel-trace.py --output .local/loader-trace.log` briefly pauses the VM, reads its loader trace ring and resumes it. Pass `--kernel` when testing an alternate kernel. Combine that trace with the session's `vm.log` using `tools/analyze-frame-gaps.py --active-touches-only --output .local/frame-gaps.json LOG...` to retain long stalls and report event queue delay during actual finger-down intervals. The upstream `vendor/hakios/tools/frames.py` remains useful for pipeline stage estimates, but its movement summary excludes gaps of100ms or more. Verify which screen the test opened before interpreting an app-specific result.

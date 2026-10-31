@@ -11,6 +11,7 @@
 input    bsd/dev/hakios.goodix.c
 input    bsd/dev/hakios.focaltech_fw.h
 input    bsd/dev/hakios.input.c
+input    bsd/sys/hakios.touch_queue.h
 input    bsd/dev/hakios.buttons.c
 input    bsd/dev/hakios.virtio_input.c
 

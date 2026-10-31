@@ -10,6 +10,7 @@
 #include <sys/errno.h>
 #include <sys/proc.h>
 #include <sys/hakios.input.h>
+#include <sys/hakios.touch_queue.h>
 #include <sys/systm.h>
 #include <sys/uio.h>
 #include <pexpert/pexpert.h>
@@ -112,10 +113,11 @@ touch_post(uint32_t type, uint32_t finger, uint32_t x, uint32_t y, bool from_dri
 	struct hakios_touch *t;
 
 	lck_mtx_lock(&touch_lock);
-	if (touch_tail - touch_head == TOUCH_QUEUE) {
-		touch_head++;                   /* nobody reads: drop the oldest */
-	}
-	t = &touch_queue[touch_tail++ % TOUCH_QUEUE];
+	/* A slow HID consumer must not replay seconds of stale finger positions.
+	 * Only consecutive MOVE records for the same finger may replace each other;
+	 * DOWN, UP, button edges and other fingers retain their order. */
+	t = hakios_touch_queue_reserve(touch_queue, &touch_head, &touch_tail,
+	    TOUCH_QUEUE, type, finger);
 	t->time = mach_absolute_time();
 	if (latency_lines()) {
 		uint64_t ns;

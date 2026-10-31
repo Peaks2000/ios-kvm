@@ -40,6 +40,14 @@ status = Path(f'/proc/{tid}/status').read_text()
 pid = int(re.search(r'^Tgid:\s+(\d+)', status, re.M)[1])
 emulator = Path(f'/proc/{pid}/exe').resolve()
 emulator_hash = hashlib.sha256(emulator.read_bytes()).hexdigest()
+kernel = root / 'vendor/hakios/hakios-kernel'
+for item in Path(f'/proc/{pid}/environ').read_bytes().split(b'\0'):
+    if item.startswith(b'QEMU_KERNEL='):
+        kernel = Path(os.fsdecode(item.split(b'=', 1)[1]))
+        if not kernel.is_absolute():
+            raise RuntimeError('Use an absolute QEMU_KERNEL path for a recorded kernel comparison')
+        break
+kernel_record = {'path': str(kernel), 'sha256': hashlib.sha256(kernel.read_bytes()).hexdigest()}
 ssh = ['bash', str(root / 'tools/ssh.sh'), '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10']
 with binary.open('rb') as source:
     subprocess.run(ssh + ['mkdir -p /var/tmp/ios-kvm-bench && '
@@ -72,6 +80,7 @@ receipt = {'schema': 1, 'kind': 'Live iOS CPU workloads; not a UI FPS benchmark'
            'label': args.label, 'started_unix': started, 'elapsed_seconds': time.time() - started,
            'emulator': str(emulator), 'emulator_sha256': emulator_hash, 'vcpus': len(cpus),
            'session_logs': session['logs'], 'boot_age_seconds': started - boot_started,
+           'kernel_artifact': kernel_record,
            'guest_build': build, 'host_load': os.getloadavg(),
            'host_meminfo': Path('/proc/meminfo').read_text(), 'median_us': medians}
 args.output.write_text(json.dumps(receipt, indent=2) + '\n')
