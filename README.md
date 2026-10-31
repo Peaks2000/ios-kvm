@@ -44,7 +44,13 @@ Opacity-first IOSurface uploads convert pixels with unaligned-safe word rotation
 
 Add `--targets 4096` to exercise a larger indirect-call working set. The optional [QEMU jump-cache experiment](patches/README.md) includes the pinned source patch, build recipe and invalidation checks. It is not enabled by default; workload results are mixed and full-system validation is pending.
 
+`QEMU_BINARY=/absolute/path/to/qemu-system-aarch64 ./run.sh` selects a custom emulator for both capability checks and the VM. To keep a local selection, write its absolute path on one line in `.local/qemu-binary`; remove that file to use system QEMU again. The environment variable overrides the local selection. The selected path is resolved before the launcher changes directories and is inherited by the managed session.
+
+For actual guest CPU comparisons, `python3 tools/build-guest-tcg-bench.py` builds an iOS benchmark and native checksum reference. With a managed VM running, `python3 tools/bench-live-tcg.py --label candidate --output .local/ios-cpu-candidate.json` deploys the benchmark into temporary guest storage and records timings, actual QEMU binary/hash, session age and host load. It checks all guest results against the native reference and excludes the first two of eight samples. Allow the same startup settling time for each build; startup widget work can otherwise dominate the measurements. These CPU workloads do not measure UI FPS.
+
 `kern.ios_kvm_timer_floor_us` is an experimental CPU timer knob in the custom kernel. Its default is zero, preserving normal deadlines. No timing change is enabled by default, and no performance gain is claimed for it until measured.
+
+`QEMU_KERNEL=/absolute/path/to/candidate ./run.sh` selects an experimental kernel for one boot without replacing the working `vendor/hakios/hakios-kernel`. A missing explicit kernel is an error. The candidate must support the same boot image, disk layout and GPU interfaces; this option does not rebuild them.
 
 Apple firmware, extracted system files and generated device identity data are local inputs and are not distributed in this repository.
 

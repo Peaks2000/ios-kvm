@@ -36,7 +36,7 @@ if [ -n "${QEMU_ESP:-}" ]; then
 fi
 RUN=()
 [ "$T" = 0 ] || RUN=(timeout "$T")
-"${RUN[@]}" qemu-system-aarch64 -name ios-kvm -M virt,gic-version=3 -cpu cortex-a76 -smp ${QEMU_SMP:-1} -m ${QEMU_MEM:-6G} \
+"${RUN[@]}" "${QEMU_BINARY:-qemu-system-aarch64}" -name ios-kvm -M virt,gic-version=3 -cpu cortex-a76 -smp ${QEMU_SMP:-1} -m ${QEMU_MEM:-6G} \
   -accel tcg,tb-size=${QEMU_TB_MB:-384} \
   -drive if=pflash,format=raw,readonly=on,file="$EFI" \
   -drive if=pflash,format=raw,file=vars.fd \

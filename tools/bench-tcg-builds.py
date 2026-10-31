@@ -10,6 +10,7 @@ import shutil
 import statistics
 import subprocess
 import tempfile
+from tcg_workload import many_targets
 
 ROOT=Path(__file__).resolve().parents[1]
 parser=argparse.ArgumentParser(description=__doc__)
@@ -61,21 +62,7 @@ with tempfile.TemporaryDirectory(prefix='tcg-benchmark-',dir=args.output.parent)
     extra=[]
     generated=None
     if args.targets:
-        generated=Path(directory)/'tcg-many-targets.inc'
-        lines=[]
-        for i in range(args.targets):
-            constant=((i+1)*0x9e3779b97f4a7c15)&((1<<64)-1)
-            body=f'uint64_t v=(x^UINT64_C(0x{constant:016x}))*UINT64_C(0xbf58476d1ce4e5b9);'
-            if i%3==1:
-                body+='v^=v>>17;'
-            elif i%3==2:
-                body+='v=(v<<11)|(v>>53);'
-            lines.append(f'__attribute__((noinline)) static uint64_t wide_{i}(uint64_t x)'
-                         f'{{{body}return v+UINT64_C({i*2+1});}}')
-        lines.append('static work_fn volatile many_steps[]={'+','.join(f'wide_{i}' for i in range(args.targets))+'};')
-        lines.append('__attribute__((noinline)) static uint64_t dispatch_many(uint64_t x){'
-                     f'for(unsigned i=0;i<1000000;i++)x=many_steps[(x>>16)&{args.targets-1}](x);return x;}}')
-        generated.write_text('\n'.join(lines)+'\n')
+        generated=many_targets(Path(directory),args.targets)
         extra=['-DIOS_KVM_MANY_TARGETS','-I',directory]
     subprocess.run(['cc','-O2','-Wall','-Wextra','-Werror',*extra,str(source),'-o',str(native)],check=True)
     subprocess.run(['clang','--target=aarch64-linux-gnu','-O2','-Wall','-Wextra','-Werror',

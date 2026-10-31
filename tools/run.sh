@@ -1,5 +1,14 @@
 #!/bin/bash
 set -euo pipefail
+project_root=$(cd "$(dirname "$0")/.." && pwd)
+if [ -z "${QEMU_BINARY:-}" ] && [ -f "$project_root/.local/qemu-binary" ]; then
+    IFS= read -r QEMU_BINARY < "$project_root/.local/qemu-binary" || true
+fi
+qemu_path=$(command -v -- "${QEMU_BINARY:-qemu-system-aarch64}") || {
+    echo 'QEMU executable not found; check QEMU_BINARY or .local/qemu-binary.' >&2
+    exit 1
+}
+export QEMU_BINARY=$(readlink -f "$qemu_path")
 cd "$(dirname "$0")/../vendor/hakios"
 mkdir -p logs
 if [ "${IOS_KVM_SESSION_MANAGED:-0}" != 1 ] && [ -f ../../.local/boot-features.json ] &&
@@ -13,7 +22,7 @@ if [ "${QEMU_SYSTEM_DISK:-1}" = 1 ] &&
 fi
 export QEMU_NET=1
 if [ -z "${AUDIO:-}" ]; then
-    audio_drivers=$(qemu-system-aarch64 -audiodev help)
+    audio_drivers=$("$QEMU_BINARY" -audiodev help)
     if printf '%s\n' "$audio_drivers" | rg -q '^pipewire$' &&
        [ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/pipewire-0" ]; then
         export AUDIO=pipewire

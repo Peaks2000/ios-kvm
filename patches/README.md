@@ -72,11 +72,19 @@ ramfb, virtio block/network/sound devices, GTK, PipeWire and TCG, with all share
 libraries resolved. Audio playback and the full iOS UI have not been tested
 with this binary.
 
-For a deliberate full iOS comparison when host memory permits, select this
-build only for that launch, from the project root:
+For a deliberate full iOS comparison, preserve and name the candidate before
+reusing the build directory for an unpatched baseline:
 
 ```sh
-PATH="$PWD/.local/qemu-native-system-build:$PATH" ./run.sh
+cp .local/qemu-native-system-build/qemu-system-aarch64 .local/qemu-system-native-cache16
+mkdir -p .local/qemu-cache16-bin
+ln -s ../qemu-system-native-cache16 .local/qemu-cache16-bin/qemu-system-aarch64
+```
+
+Select the preserved build only for that launch, from the project root:
+
+```sh
+PATH="$PWD/.local/qemu-cache16-bin:$PATH" ./run.sh
 ```
 
 Ordinary `./run.sh` continues to select the installed system QEMU. Keep the

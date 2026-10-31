@@ -34,8 +34,12 @@
 # file that holds the image at the right offset (reflinked, so it costs neither disk space nor
 # host RAM).
 cd "$(dirname "$(readlink -f "$0")")/.." || exit 1
-K=hakios-kernel
-[ -f $K ] || { K=prebuilt/hakios-kernel; echo "run-darwin.sh: no kernel built here, using $K" >&2; }
+K=${QEMU_KERNEL:-hakios-kernel}
+if [ -n "${QEMU_KERNEL:-}" ]; then
+	[ -f "$K" ] || { echo "Kernel does not exist: $K" >&2; exit 1; }
+else
+	[ -f "$K" ] || { K=prebuilt/hakios-kernel; echo "run-darwin.sh: no kernel built here, using $K" >&2; }
+fi
 # Darwin has to be told which iPhone it runs on, and that comes from the user's own IPSW, into the loader at build time
 # (xnuloader/mkidentity.sh). The loader in prebuilt/ has no Apple data, so with it Darwin does not start, and the window stays black.
 if [ ! -f xnuloader/loader.efi ] && [ -z "$QEMU_PREBUILT_LOADER" ]; then
@@ -115,7 +119,7 @@ if [ -n "$QEMU_NET" ] && [ "$QEMU_NET" != 0 ]; then
 fi
 # the sound device (QEMU 8.2 or newer has one for this machine): the kernel's sink for /dev/hakios-audio
 SOUND=()
-if qemu-system-aarch64 -device help 2>/dev/null | grep -q '"virtio-sound-device"'; then
+if "${QEMU_BINARY:-qemu-system-aarch64}" -device help 2>/dev/null | grep -q '"virtio-sound-device"'; then
 	case "${AUDIO:-none}" in
 	*.wav) SOUND=(-audiodev "wav,id=snd,path=$(readlink -f "$AUDIO")") ;;
 	*) SOUND=(-audiodev "${AUDIO:-none},id=snd") ;;
@@ -139,7 +143,7 @@ if [ "$SYSTEM_DISK" = 1 ]; then
 	CMDLINE="virtio_blk=2 system_disk=rvblk0 $CMDLINE"
 	RESIDENT=()
 fi
-xnuloader/mkpayload.py -o qemu/payload.bin kernel=$K ramdisk=$ROOT "${RESIDENT[@]}" \
+xnuloader/mkpayload.py -o qemu/payload.bin "kernel=$K" "ramdisk=$ROOT" "${RESIDENT[@]}" \
 	--cmdline "loader_return_after=$SECS epoch=$(date +%s) virtio_input=1 $CMDLINE" >/dev/null || exit 1
 LIMIT=$((SECS + 40)); [ "$SECS" = 0 ] && LIMIT=0
 QEMU_MEM=${RAM_GB}G exec qemu/run.sh "$LIMIT" \
