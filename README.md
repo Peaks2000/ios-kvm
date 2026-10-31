@@ -40,6 +40,8 @@ Opacity-first IOSurface uploads convert pixels with unaligned-safe word rotation
 
 `python3 tools/test-host-readback.py --server .local/virgl-build/vtest/virgl_test_server --draw` tests actual VirGL vertex/fragment shaders, alternating opaque/alpha-blended full-screen triangles and shared-RAM output at750×1624, without a VM. Every output pixel, padding guards, invalid destination rejection and recovery are checked; use `--mode software` to test the software renderer. GPU selection runs a small two-frame version before accepting each renderer. Its command encoder is built from the pinned upstream test encoder, cached by source/build inputs and host architecture; source attribution/license are retained. NVIDIA and llvmpipe pass; AMD/Intel physical testing and general iOS app coverage remain pending.
 
+`python3 tools/bench-tcg-builds.py /path/to/candidate/qemu-aarch64 --output .local/cpu-comparison.json` compares user-mode emulator builds without booting a VM. It checks arithmetic, indirect-call and memory-workload results against a native reference, then runs alternating baseline/candidate phases. `--cpu N` pins only benchmark children to an allowed host CPU. System-emulator binaries are rejected. Results do not establish full-system iOS speed; the normal launcher continues to use the installed system QEMU.
+
 `kern.ios_kvm_timer_floor_us` is an experimental CPU timer knob in the custom kernel. Its default is zero, preserving normal deadlines. No timing change is enabled by default, and no performance gain is claimed for it until measured.
 
 Apple firmware, extracted system files and generated device identity data are local inputs and are not distributed in this repository.
