@@ -74,6 +74,7 @@
 #include <unistd.h>
 
 #include "hakios.gl.h"
+#include "surface_fingerprint.h"
 
 /* ---- OpenGL ES: the types, the few names used here, the library's functions --------------------- */
 
@@ -663,17 +664,14 @@ surface_changed(struct eagl *e, struct image *image)
 	size_t size = IOSurfaceGetBytesPerRow(surface) * (size_t)(image->height - 1) +
 	    (size_t)image->width * bytes_a_pixel(image->format, image->type);
 	const uint8_t *base = IOSurfaceGetBaseAddress(surface);
-	uint64_t sum = size, word;
 
 	if (image->looked == e->frames + 1 || base == NULL || IOSurfaceGetPlaneCount(surface) > 0) {
 		return false;
 	}
 	image->looked = e->frames + 1;
-	for (size_t at = 0; at + 8 <= size; at += 8) {
-		memcpy(&word, base + at, 8);
-		sum = (sum ^ word) * 0x9e3779b97f4a7c15ull;
-		sum ^= sum >> 29;
-	}
+	/* Four independent XXH64 accumulators avoid a serial dependency for every word.
+	 * Unlike the original loop, this includes the final partial word too. */
+	uint64_t sum = surface_fingerprint(base, size);
 	if (sum == image->sum) {
 		return false;
 	}

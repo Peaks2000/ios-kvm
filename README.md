@@ -34,6 +34,8 @@ The host renderer reuses its mapping of sealed anonymous guest RAM instead of ma
 
 Backdrop snapshots copy only the enabled scissor rectangle, keeping the original texture coordinates and restoring GL state. Empty or fully clipped draws need no copy. The production shaders and snapshot functions pass 72 offscreen cases per renderer on NVIDIA and llvmpipe, including fresh backgrounds, partial/clipped/empty rectangles and unchanged pixels outside them. `python3 tools/test-backdrop.py --host --mode hardware --benchmark` runs these checks and a copy-only benchmark without a VM; `--mode software` selects software rendering. Guest desktop timing remains pending.
 
+IOSurface change detection uses XXH64 instead of the original serial word hash, and includes trailing bytes that the old loop missed. Run `python3 tools/test-surface-fingerprint.py` for correctness, reference-library comparison when installed, and timing. `--arm` also runs a freestanding ARM calculation through QEMU user mode; it starts no VM. In one alternating generic-ARM build test, a 4.9 MB fingerprint took about0.59ms versus1.16–1.17ms previously. This measures only hashing; full iOS CPU/UI performance remains unverified.
+
 `kern.ios_kvm_timer_floor_us` is an experimental CPU timer knob in the custom kernel. Its default is zero, preserving normal deadlines. No timing change is enabled by default, and no performance gain is claimed for it until measured.
 
 Apple firmware, extracted system files and generated device identity data are local inputs and are not distributed in this repository.
@@ -44,6 +46,7 @@ Apple firmware, extracted system files and generated device identity data are lo
 - dipa-studio and contributors: [ios-sweet](https://github.com/dipa-studio/ios-sweet), used for the first kernel boot experiment in the separate `../ios16-qemu` workspace.
 - Apple: open-source XNU and related components, under their respective original licenses.
 - QEMU and its contributors: the virtual machine runtime.
+- Yann Collet: xxHash, BSD 2-Clause license retained in [vendor/xxhash/xxhash.h](vendor/xxhash/xxhash.h); imported from the pinned Mesa source with a standalone compiler-macro adaptation.
 - Mesa and VirGL contributors: graphics implementation and host renderer; sources are fetched locally for development.
 - LZ4 contributors: lossless GPU transport compression, imported under `vendor/lz4` from v1.10.0 (`ebb370ca83af193212df4dcbadcc5d87bc0de2f0`); its BSD license is retained.
 
