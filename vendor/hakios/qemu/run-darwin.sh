@@ -108,12 +108,19 @@ if qemu-system-aarch64 -device help 2>/dev/null | grep -q '"virtio-sound-device"
 	SOUND+=(-device virtio-sound-device,audiodev=snd,streams=1)   # one stream: output, no microphone of the host
 	CMDLINE="virtio_sound=1 $CMDLINE"
 fi
+DATA=()
+if [ -n "${QEMU_DATA_IMAGE:-}" ]; then
+	[ -f "$QEMU_DATA_IMAGE" ] || { echo "Data disk does not exist: $QEMU_DATA_IMAGE" >&2; exit 1; }
+	[ -f hakios-kernel ] || { echo 'Persistent data needs the locally built HFS kernel.' >&2; exit 1; }
+	DATA=(-drive "file=$QEMU_DATA_IMAGE,format=raw,if=none,id=data,cache=writethrough" -device virtio-blk-device,drive=data)
+	CMDLINE="virtio_blk=2 var_hfs=rvblk0 var_hfs_required=1 $CMDLINE"
+fi
 xnuloader/mkpayload.py -o qemu/payload.bin kernel=$K ramdisk=$ROOT --physbase f8000000 --rdres "$(printf '%x' "$(stat -c %s "$IMG")")" \
 	--cmdline "loader_return_after=$SECS epoch=$(date +%s) virtio_input=1 $CMDLINE" >/dev/null || exit 1
 LIMIT=$((SECS + 40)); [ "$SECS" = 0 ] && LIMIT=0
 QEMU_MEM=${RAM_GB}G exec qemu/run.sh "$LIMIT" \
 	-object memory-backend-file,id=ram,size=$RAM_SIZE,mem-path="$MEMORY_FILE",share=$MEMORY_SHARE \
 	-machine memory-backend=ram \
-	-global virtio-mmio.force-legacy=false -device virtio-tablet-device -device virtio-keyboard-device "${NET[@]}" "${SOUND[@]}" \
+	-global virtio-mmio.force-legacy=false -device virtio-tablet-device -device virtio-keyboard-device "${NET[@]}" "${SOUND[@]}" "${DATA[@]}" \
 	-device ramfb -monitor tcp:127.0.0.1:$((4444 + 10 * INSTANCE)),server,nowait \
 	-qmp tcp:127.0.0.1:$((4445 + 10 * INSTANCE)),server,nowait "$@"

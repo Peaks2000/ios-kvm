@@ -250,10 +250,17 @@ struct eagl {
 	GLuint colour;                  /* ... and the texture that is its colour attachment (0: none, or no texture) */
 	GLuint reader;                  /* a framebuffer of ours, to read a texture back */
 	GLuint writer;                  /* ... and one to copy a frame into its surface with (blit_targets) */
+	GLuint flip_texture, flip_framebuffer;
+	GLsizei flip_width, flip_height;
 	GLuint program;                 /* the one in use, as CoreAnimation has it */
 	GLuint plain, lookup;           /* programs of ours for when that is none (plain_draw_begin()) */
 	GLint plain_matrix, plain_textured, lookup_matrix;
 	GLuint vibrant, masking;        /* two more: what a colour matrix does to what is behind, and to the layer */
+	GLuint behind_texture;
+	GLint behind_width, behind_height, behind_binding;
+	bool behind_bound;
+	GLuint behind_programs[3];
+	GLint behind_locations[3];
 	int blended;                    /* blending is off for such a draw, to be put back after it */
 	bool no_vibrant;                /* the first of the two could not be made */
 	GLint vibrant_matrix, vibrant_colours, masking_matrix, masking_colours;
@@ -804,16 +811,27 @@ target_to_surface(struct eagl *e, struct image *image)
 		if (!image->invert) {
 			glReadPixels(0, 0, image->width, image->height, GL_BGRA, GL_UNSIGNED_BYTE, base);
 		} else {
-			/* A row-at-a-time read is thousands of GPU/transport round trips on a tall screen. */
-			uint8_t *pixels = malloc(row * (size_t)image->height);
-			if (pixels != NULL) {
-				glReadPixels(0, 0, image->width, image->height, GL_BGRA, GL_UNSIGNED_BYTE, pixels);
-				for (GLsizei y = 0; y < image->height; y++) {
-					memcpy(base + row * (size_t)(image->height - 1 - y), pixels + row * (size_t)y,
-					    (size_t)image->width * 4);
-				}
-				free(pixels);
+			/* Flip on the host GPU rather than copying the entire screen again under ARM emulation. */
+			GLint bound;
+			GLboolean scissored = glIsEnabled(GL_SCISSOR_TEST);
+			glGetIntegerv(GL_TEXTURE_BINDING_2D, &bound);
+			if (!e->flip_texture) glGenTextures(1, &e->flip_texture);
+			glBindTexture(GL_TEXTURE_2D, e->flip_texture);
+			if (e->flip_width != image->width || e->flip_height != image->height) {
+				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image->width, image->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+				e->flip_width = image->width;
+				e->flip_height = image->height;
 			}
+			glBindTexture(GL_TEXTURE_2D, bound);
+			if (!e->flip_framebuffer) glGenFramebuffers(1, &e->flip_framebuffer);
+			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, e->flip_framebuffer);
+			glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, e->flip_texture, 0);
+			glDisable(GL_SCISSOR_TEST);
+			glBlitFramebuffer(0, 0, image->width, image->height, 0, image->height, image->width, 0,
+			    GL_COLOR_BUFFER_BIT, GL_NEAREST);
+			(scissored ? glEnable : glDisable)(GL_SCISSOR_TEST);
+			glBindFramebuffer(GL_READ_FRAMEBUFFER, e->flip_framebuffer);
+			glReadPixels(0, 0, image->width, image->height, GL_BGRA, GL_UNSIGNED_BYTE, base);
 		}
 		glPixelStorei(GL_PACK_ROW_LENGTH, 0);
 		IOSurfaceUnlock(surface, 0, NULL);
@@ -1714,17 +1732,27 @@ static const char table_fragment[] =
 #define FUNCTION_SHADOW_BLUR            40
 #define FUNCTION_VIBRANT_MATRIX         45
 
+#define BACKDROP_SHADER \
+    "#ifdef GL_EXT_shader_framebuffer_fetch\n" \
+    "#extension GL_EXT_shader_framebuffer_fetch : require\n" \
+    "layout(location = 0) inout highp vec4 result;\n" \
+    "#define BACKDROP result\n" \
+    "#else\n" \
+    "uniform highp sampler2D hakios_behind;\n" \
+    "out highp vec4 result;\n" \
+    "#define BACKDROP texelFetch(hakios_behind, ivec2(gl_FragCoord.xy), 0)\n" \
+    "#endif\n"
+
 static const char vibrant_fragment[] =
     "#version 300 es\n"
-    "#extension GL_EXT_shader_framebuffer_fetch : require\n"
+    BACKDROP_SHADER
     "uniform lowp sampler2D texture0;\n"
     "uniform mediump vec4 colours[5];\n"
     "in lowp vec4 color;\n"
     "in highp vec2 texcoord;\n"
-    "layout(location = 0) inout highp vec4 result;\n"
     "void main() {\n"
     "  mediump vec4 layer = color * texture(texture0, texcoord / vec2(textureSize(texture0, 0)));\n"
-    "  mediump vec4 behind = result, s = behind;\n"
+    "  mediump vec4 behind = BACKDROP, s = behind;\n"
     "  s.rgb = s.rgb / max(s.a, .005);\n"
     "  s = s.r * colours[0] + s.g * colours[1] + s.b * colours[2] + s.a * colours[3] + colours[4];\n"
     "  s.a = clamp(s.a, 0., 1.);\n"
@@ -2217,6 +2245,70 @@ plain_program(const char *fragment, const char *what)
  * in those seconds (which is what tells the screens of a scenario apart); and with that the
  * count of each since the start.
  */
+#define GL_ACTIVE_TEXTURE 0x84e0
+#define GL_RGBA8 0x8058
+#define GL_TEXTURE_MIN_FILTER 0x2801
+
+/* Snapshot on the host GPU when framebuffer fetch is unavailable. Unit 7 is restored after the draw. */
+static void
+backdrop_begin(struct eagl *e, GLuint program)
+{
+	GLint location = -1, active, attachment = 0, width = 0, height = 0, read_fbo, draw_fbo;
+	for (unsigned i = 0; i < 3; i++) {
+		if (e->behind_programs[i] == 0) {
+			e->behind_programs[i] = program;
+			e->behind_locations[i] = glGetUniformLocation(program, "hakios_behind");
+		}
+		if (e->behind_programs[i] == program) {
+			location = e->behind_locations[i];
+			break;
+		}
+	}
+	if (location < 0) return; /* Native framebuffer fetch needs no copy. */
+	glGetIntegerv(GL_ACTIVE_TEXTURE, &active);
+	glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read_fbo);
+	glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw_fbo);
+	glGetFramebufferAttachmentParameteriv(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+	    GL_FRAMEBUFFER_ATTACHMENT_OBJECT_NAME, &attachment);
+	glActiveTexture(GL_TEXTURE0 + 7);
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &e->behind_binding);
+	glBindTexture(GL_TEXTURE_2D, attachment);
+	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &width);
+	glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &height);
+	if (width > 0 && height > 0) {
+		if (!e->behind_texture) glGenTextures(1, &e->behind_texture);
+		glBindTexture(GL_TEXTURE_2D, e->behind_texture);
+		if (width != e->behind_width || height != e->behind_height) {
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+			e->behind_width = width;
+			e->behind_height = height;
+		}
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, draw_fbo);
+		glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, read_fbo);
+		glUniform1i(location, 7);
+		e->behind_bound = true;
+	} else {
+		glBindTexture(GL_TEXTURE_2D, e->behind_binding);
+	}
+	glActiveTexture(active);
+}
+
+static void
+backdrop_end(struct eagl *e)
+{
+	if (e->behind_bound) {
+		GLint active;
+		glGetIntegerv(GL_ACTIVE_TEXTURE, &active);
+		glActiveTexture(GL_TEXTURE0 + 7);
+		glBindTexture(GL_TEXTURE_2D, e->behind_binding);
+		glActiveTexture(active);
+		e->behind_bound = false;
+	}
+}
+
 enum { CENSUS_NOT_DRAWN, CENSUS_PLAIN, CENSUS_TABLE, CENSUS_VIBRANT, CENSUS_MASKING, CENSUS_BOX, CENSUS_BLUR4, CENSUS_LEVEL,
        CENSUS_VBLUR, CENSUS_KINDS };
 static const char *const census_kinds[CENSUS_KINDS] = {
@@ -2522,16 +2614,15 @@ static const char group_cover_fragment[] =
     "}\n";
 static const char group_over_fragment[] =
     "#version 300 es\n"
-    "#extension GL_EXT_shader_framebuffer_fetch : require\n"
+    BACKDROP_SHADER
     "uniform lowp sampler2D texture0;\n"
     "uniform highp vec4 texmat;\n"
     "uniform mediump vec4 colours[5];\n"
     "in lowp vec4 color;\n"
     "in highp vec2 texcoord;\n"
-    "layout(location = 0) inout highp vec4 result;\n"
     "void main() {\n"
     "  mediump vec4 layer = color * texture(texture0, texcoord * texmat.xy + texmat.zw);\n"
-    "  mediump vec4 behind = result, s = behind;\n"
+    "  mediump vec4 behind = BACKDROP, s = behind;\n"
     "  s.rgb = s.rgb / max(s.a, .005);\n"
     "  s = s.r * colours[0] + s.g * colours[1] + s.b * colours[2] + s.a * colours[3] + colours[4];\n"
     "  s.a = clamp(s.a, 0., 1.);\n"
@@ -2540,11 +2631,10 @@ static const char group_over_fragment[] =
     "}\n";
 static const char group_flat_fragment[] =
     "#version 300 es\n"
-    "#extension GL_EXT_shader_framebuffer_fetch : require\n"
+    BACKDROP_SHADER
     "uniform mediump vec4 flat_colour;\n"
-    "layout(location = 0) inout highp vec4 result;\n"
     "void main() {\n"
-    "  result = flat_colour * result.a;\n"
+    "  result = flat_colour * BACKDROP.a;\n"
     "}\n";
 
 #ifndef GL_BLEND_SRC_ALPHA
@@ -2656,7 +2746,9 @@ group_flatten(struct eagl *e, GLuint texture, struct group_texture *g)
 		glDisableVertexAttribArray(2);
 		glEnableVertexAttribArray(0);
 		glVertexAttribPointer(0, 2, GL_FLOAT, 0, 0, corners);
+		backdrop_begin(e, e->group_flat);
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+		backdrop_end(e);
 		glVertexAttribPointer(0, e->arrays[0].size, e->arrays[0].type, 0, e->arrays[0].stride, e->arrays[0].pointer);
 		for (GLuint i = 0; i < 3; i++) {
 			(enabled[i] ? glEnableVertexAttribArray : glDisableVertexAttribArray)(i);
@@ -2809,6 +2901,7 @@ group_draw_begin(struct eagl *e, GLint enabled[4])
 			into->state = GROUP_NONE;
 		}
 		group_laid++;
+		backdrop_begin(e, e->group_over);
 	}
 	for (GLuint i = 0; i < 3; i++) {
 		glGetVertexAttribiv(i, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &enabled[i]);
@@ -2822,6 +2915,7 @@ group_draw_begin(struct eagl *e, GLint enabled[4])
 static void
 group_draw_end(struct eagl *e, const GLint enabled[4])
 {
+	backdrop_end(e);
 	for (GLuint i = 0; i < 3; i++) {
 		if (!enabled[i]) {
 			glDisableVertexAttribArray(i);
@@ -2913,6 +3007,7 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 		glUseProgram(program);
 		glUniformMatrix4fv(vibrant ? e->vibrant_matrix : e->masking_matrix, 1, 0, e->matrix != NULL ? e->matrix : identity);
 		glUniform4fv(vibrant ? e->vibrant_colours : e->masking_colours, 5, function_values[function]);
+		if (vibrant) backdrop_begin(e, program);
 		if (vibrant && glIsEnabled(GL_BLEND)) {
 			e->blended = 1;                 /* the program has blended already */
 			glDisable(GL_BLEND);
@@ -3017,6 +3112,7 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 static void
 plain_draw_end(struct eagl *e, const GLint enabled[4])
 {
+	backdrop_end(e);
 	for (GLuint i = 0; i < 4; i++) {
 		if (!enabled[i]) {
 			glDisableVertexAttribArray(i);

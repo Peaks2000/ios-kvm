@@ -85,6 +85,8 @@ LD="-Wl,-e,_start -Wl,-pagezero_size,0x100000000"
 DYN="xnu-clang -arch arm64 -isysroot ${THEOS:-$HOME/theos}/sdks/iPhoneOS16.5.sdk -O1"
 DARWIN=../sysimage
 CACHE=$DARWIN/$(cat "$DARWIN/cache-dir" 2>/dev/null || echo 20F66__iPhone10,3_6)
+SYSTEM_LAYOUT="prefix-apps-only-v1:$(sha256sum ../jb/root/var/jb/Library/dpkg/status 2>/dev/null | cut -d' ' -f1)"
+[ "$(cat system.layout 2>/dev/null)" = "$SYSTEM_LAYOUT" ] || SYSTEM=1
 # sysimage/rootfs and sysimage/cryptex must be this copy's own directories of hard links, the way
 # tools/new-workspace.sh makes them. A symlink to another copy's tree makes sysroot a symlink too, because
 # cp -a does not follow one, and then every rm -rf and mv below edits the shared extraction in place. That
@@ -158,12 +160,14 @@ if [ -n "${SUPPORT_DIR:-}" ]; then
 	for f in "$SUPPORT_DIR"/*.dylib; do
 		[ -f "$f" ] && cp "$f" obj/
 	done
+	[ ! -f "$SUPPORT_DIR/init" ] || cp "$SUPPORT_DIR/init" obj/init
 fi
 
 # --- the small image ------------------------------------------------------------------------------
 rm -rf root
 mkdir -p root/sbin root/bin root/etc root/share root/LaunchDaemons
 cp obj/init root/sbin/init
+[ -z "${SUPPORT_DIR:-}" ] || [ ! -f "$SUPPORT_DIR/vm-session-init" ] || cp "$SUPPORT_DIR/vm-session-init" root/bin/
 cp obj/child root/bin/child
 # The data volume into the flash and back (src/var_store.c), and the job that saves it when a run
 # ends: the program and its job together, away from the Darwin job list below, which several working
@@ -228,14 +232,14 @@ if [ -d $DARWIN/rootfs/usr/lib ]; then
 		$DYN -dynamiclib -install_name /redwood/lib/libhakios.dylib -framework CoreFoundation -framework IOKit -lobjc \
 			-o obj/libhakios.dylib src/inject.c
 		$DYN -dynamiclib -install_name /redwood/lib/libhakios.sb.dylib -framework CoreFoundation -framework IOKit -lobjc \
-			-o obj/libhakios.sb.dylib src/inject_sb.c
+			-o obj/libhakios.sb.dylib src/inject_sb.c src/ui_layout.c
 		# ... the tweak loader of the package manager's prefix (src/inject_tweaks.c): it goes into a
 		# program either as the one library the kernel inserts or opened by a library of ours
 		$DYN -dynamiclib -install_name /redwood/lib/libhakios.tweaks.dylib -framework CoreFoundation -lobjc \
-			-o obj/libhakios.tweaks.dylib src/inject_tweaks.c
+			-o obj/libhakios.tweaks.dylib src/inject_tweaks.c src/ui_layout.c
 		# ... and inside an application, to say what killed it (src/inject_app.c)
 		$DYN -dynamiclib -install_name /redwood/lib/libhakios.app.dylib -lobjc \
-			-o obj/libhakios.app.dylib src/inject_app.c
+			-o obj/libhakios.app.dylib src/inject_app.c src/ui_layout.c
 		$DYN -O2 -dynamiclib -install_name /redwood/lib/libhakios.media.dylib -framework CoreFoundation -framework CoreMedia \
 			-framework CoreVideo -framework IOSurface -lobjc \
 			-o obj/libhakios.media.dylib src/inject_media.c src/camera_device.c src/camera_isp.c
@@ -613,11 +617,8 @@ if [ -f $DARWIN/system.manifest ] && [ -f $CACHE/dyld_shared_cache_arm64 ] &&
 	if [ -d ../jb/root/var/jb ]; then
 		rm -rf sysroot/jb
 		cp -a ../jb/root/var/jb sysroot/jb
-		# the applications of the prefix are system applications here: LaunchServices builds its
-		# database afresh at every boot by walking /Applications, which is how their icons appear
-		for app in sysroot/jb/Applications/*.app; do
-			[ -d "$app" ] && cp -a "$app" sysroot/Applications/
-		done
+		# Prefix applications register from their writable /var/jb path in prep.sh. A second copy
+		# under /Applications makes cache refreshes switch identities and terminate a running Sileo.
 		# Sileo moves, copies and removes files as root with /bin/mv, /bin/cp, /bin/rm, /bin/mkdir and
 		# /bin/chmod -- where a jailbreak with a writable root keeps them -- and Darwin's /bin has df and ps
 		# alone: every one of those spawns failed with nothing said, and the package it had downloaded never
@@ -652,4 +653,5 @@ if [ -f $DARWIN/system.manifest ] && [ -f $CACHE/dyld_shared_cache_arm64 ] &&
 	python3 ../tools/apfs/mkapfs.py -z -o system.apfs System=sysroot,manifest=$DARWIN/system.manifest | tail -1
 	[ -z "$CHECK" ] || ../tools/apfs/check-image.sh system.apfs System=sysroot,manifest=$DARWIN/system.manifest
 	rm -rf sysroot
+	printf '%s\n' "$SYSTEM_LAYOUT" > system.layout
 fi

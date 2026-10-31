@@ -24,6 +24,7 @@ image clean: tools/apfs/check-image.sh).  Hard links are not made: a name is a f
 """
 import argparse
 import concurrent.futures
+from collections import deque
 import hashlib
 import os
 import stat
@@ -38,6 +39,23 @@ OID_NX = 1
 OID_RESERVED = 1024                     # the first object id that is not reserved
 ROOT_DIR_PARENT, ROOT_DIR_INO, PRIV_DIR_INO = 1, 2, 3
 MIN_USER_INO = 16
+
+
+def bounded_compression(pool, paths, workers):
+    """Keep only one file per worker in flight; large dyld files must not queue in RAM."""
+    paths = iter(paths)
+    pending = deque()
+    for _ in range(workers):
+        try:
+            pending.append(pool.submit(compressed_fork, next(paths)))
+        except StopIteration:
+            break
+    while pending:
+        yield pending.popleft().result()
+        try:
+            pending.append(pool.submit(compressed_fork, next(paths)))
+        except StopIteration:
+            pass
 
 # object types
 T_NX, T_BTREE, T_BTNODE, T_SPACEMAN, T_CAB, T_CIB = 0x1, 0x2, 0x3, 0x5, 0x6, 0x7
@@ -331,10 +349,10 @@ class Volume:
             node.size = os.path.getsize(node.source)
         forks = iter(())
         if self.compress:
-            # compressed by as many processes as there are processors, taken in the files' order
-            pool = concurrent.futures.ProcessPoolExecutor()
-            forks = pool.map(compressed_fork, [n.source for n in files if n.size > 0 and not self.is_plain(n)],
-                             chunksize=16)
+            workers = max(1, int(os.environ.get('MKAPFS_JOBS', min(2, os.cpu_count() or 1))))
+            pool = concurrent.futures.ProcessPoolExecutor(max_workers=workers)
+            forks = bounded_compression(pool,
+                (n.source for n in files if n.size > 0 and not self.is_plain(n)), workers)
         for node in files:
             if node.size == 0:
                 continue

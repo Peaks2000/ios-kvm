@@ -34,5 +34,6 @@ shutil.copyfile(library, out / 'libOSMesa.8.dylib')
 subprocess.run(['clang', '-target', 'arm64-apple-ios16.0', '-isysroot',
                 str(root / '.local/sdks/iPhoneOS16.5.sdk'), '-fuse-ld=lld', '-O2',
                 '-I', str(mesa / 'include'), '-Wl,-rpath,@executable_path',
+                '-Wl,-rpath,/redwood/share/gpu-bundle',
                 str(root / 'tools/gpu-bench.c'), str(library), '-o', str(out / 'gpu-bench')], check=True)
 print(f'Built EAGL bridge with {len(exports)} exported GL entry points')

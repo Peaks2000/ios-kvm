@@ -89,6 +89,41 @@ shutil.copyfile(root / 'tools/gpu-transport.h', vtest / 'gpu-transport.h')
 edit('src/gallium/winsys/virgl/vtest/virgl_vtest_socket.c',
      '   vws->sock_fd = sock;\n   virgl_vtest_send_init(vws);',
      '   vws->sock_fd = sock;\n   ios_kvm_reset_frames(sock);\n   virgl_vtest_send_init(vws);')
+edit('src/gallium/winsys/virgl/vtest/virgl_vtest_socket.c',
+     '''   int sock = socket(AF_INET, SOCK_STREAM, 0);
+   if (sock < 0)
+      return -1;''',
+     '''   int sock = -1;''')
+edit('src/gallium/winsys/virgl/vtest/virgl_vtest_socket.c',
+     '''   if (connect(sock, (struct sockaddr *)&address, sizeof(address)) < 0) {
+      close(sock);
+      return -1;
+   }''',
+     '''   /* backboardd can start before configd finishes DHCP. Do not use a failed socket. */
+   for (unsigned attempt = 0; attempt < 200; attempt++) {
+      sock = socket(AF_INET, SOCK_STREAM, 0);
+      if (sock < 0)
+         return -1;
+      if (connect(sock, (struct sockaddr *)&address, sizeof(address)) == 0)
+         break;
+      int error = errno;
+      close(sock);
+      sock = -1;
+      if (error != ENETUNREACH && error != EHOSTUNREACH && error != ECONNREFUSED &&
+          error != ENETDOWN && error != EADDRNOTAVAIL && error != EINTR)
+         return -1;
+      usleep(50000);
+   }
+   if (sock < 0)
+      return -1;''')
+edit('src/gallium/winsys/virgl/vtest/virgl_vtest_winsys.c',
+     '   virgl_vtest_connect(vtws);\n   vtws->sws = sws;',
+     '''   vtws->sock_fd = -1;
+   if (virgl_vtest_connect(vtws) < 0) {
+      FREE(vtws);
+      return NULL;
+   }
+   vtws->sws = sws;''')
 edit('src/gallium/winsys/virgl/vtest/meson.build',
      "['virgl_vtest_socket.c', 'virgl_vtest_winsys.c']",
      "['virgl_vtest_socket.c', 'virgl_vtest_winsys.c', 'lz4.c']")

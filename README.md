@@ -2,9 +2,9 @@
 
 An independent project to run the user's iPhone X iOS 16.7.16 (20H392) firmware in QEMU on Linux.
 
-`ios-kvm` is the software project. The separate private `PeaksiOS` repository is for the owner's personal VM image portability. Despite the project name, ARM guests on x86 hosts currently use QEMU TCG CPU emulation, not KVM.
+`ios-kvm` is the portable software project: users supply their own supported IPSW and keep their firmware, NAND and settings locally. Automatic GPU detection and setup for NVIDIA, AMD and Intel are project requirements; NVIDIA is the only hardware tested so far, and automatic setup remains unfinished. The intended separate private `PeaksiOS` repository is exclusively the owner's NAND backups and personal machine configuration, with no separate renderer implementation. It has not yet been created. Despite the project name, ARM guests on x86 hosts currently use QEMU TCG CPU emulation, not KVM.
 
-The target is a usable iOS interface, SSH, Sileo, GPU acceleration and reliable virtual Ethernet. The VM has reached the home screen and Sileo onboarding, with root SSH and DHCP Ethernet with working DNS/HTTPS. Desktop performance is still poor. The experimental VirGL bridge renders on the host GPU in standalone tests; a usable accelerated desktop and general app support remain unverified. See [STATUS.md](STATUS.md) for evidence and remaining work.
+The target is a usable iOS interface, SSH, Sileo, GPU acceleration and reliable virtual Ethernet. The VM has reached the home screen and Sileo onboarding, with root SSH and DHCP Ethernet with working DNS/HTTPS. The experimental VirGL bridge renders the desktop on the host GPU, but performance and general app support remain unfinished. See [STATUS.md](STATUS.md) for evidence and remaining work.
 
 ## Local use
 

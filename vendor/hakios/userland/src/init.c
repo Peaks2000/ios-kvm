@@ -587,7 +587,7 @@ copy_file(const char *from, const char *to, int mode, int uid, int gid)
 			ok = ok && write(out, buf, (size_t)n) == n;
 		}
 		close(out);
-		ok = ok && n == 0 && chmod(to, mode) == 0 && chown(to, uid, gid) == 0;
+		ok = ok && n == 0 && chown(to, uid, gid) == 0 && chmod(to, mode) == 0;
 	}
 	close(in);
 	return ok;
@@ -716,7 +716,7 @@ copy_tree(const char *from, const char *to, int *files)
 }
 
 /* The parts of the prefix that are written over, not just added to, and so are copied for real. */
-static const char *const graft_copy[] = { "Library", "etc", "var", "tmp" };
+static const char *const graft_copy[] = { "Library", "etc", "var", "tmp", "Applications" };
 
 static int
 graft_tree(const char *from, const char *to, int top, int *made, int *linked)
@@ -998,15 +998,22 @@ mount_writable(void)
 		 * application from there, and from /private/var not at all -- everything a package put in
 		 * /var/jb/Applications was "Unable to register", with nothing on the files even looked at.
 		 */
-		/* the prefix is grafted anew at every boot: on the kept volume, last boot's goes first */
-		if (var_kept && lstat(to, &st) == 0) {
-			if ((st.st_mode & S_IFMT) == S_IFDIR) {
-				empty_tree(to, 0);
-				rmdir(to);
+		if (var_kept) {
+			/* A persistent prefix is never re-grafted: dpkg, tweaks and their files belong to the user. */
+			if (lstat(to, &st) == 0) {
+				grafted = (st.st_mode & S_IFMT) == S_IFDIR;
+				printf("  keeping the existing package-manager prefix\n");
 			} else {
-				unlink(to);
+				const char *stage = "/private/var/.ios-kvm-bootstrap.new";
+				/* Only our incomplete staging copy is discarded after an interrupted first setup. */
+				if (lstat(stage, &st) == 0 && (st.st_mode & S_IFMT) == S_IFDIR) {
+					empty_tree(stage, 0);
+					rmdir(stage);
+				}
+				grafted = copy_tree(jb, stage, &entries) && rename(stage, to) == 0;
+				printf("  first persistent prefix: full writable copy, %d files\n", entries);
 			}
-		}
+		} else {
 		if (strcmp(jb, "/private/preboot/jb") == 0 && stat("/private/preboot/jb-rw", &st) == 0) {
 			if (mount("ramfs", "/private/preboot/jb-rw", 0, NULL) == 0 &&
 			    symlink("/private/preboot/jb-rw/procursus", "/private/var/jb") == 0) {
@@ -1016,6 +1023,7 @@ mount_writable(void)
 			}
 		}
 		grafted = graft_tree(jb, to, 1, &dirs, &entries);
+		}
 
 		/*
 		 * All of it belongs to root, as it does on a phone, but for the user's corner of it: an
@@ -1546,7 +1554,17 @@ main(int argc, char **argv, char **envp)
 	}
 
 	show_system();
+	/* The first persistent bootstrap copy also needs more than 1024 vnodes. */
+	configure_vnodes();
 	mount_writable();
+	{
+		const char *required = boot_arg("var_hfs_required");
+		if (required != NULL && strcmp(required, "1") == 0 && !var_kept) {
+			printf("ios-kvm: persistent data disk did not mount; refusing a volatile replacement\n");
+			reboot(RB_HALT);
+			return 1;
+		}
+	}
 	restore_var();
 	test_files();
 	test_writable();
@@ -1560,7 +1578,6 @@ main(int argc, char **argv, char **envp)
 	/* daemons that do not run as root get the console as their standard error too */
 	chmod("/dev/console", 0666);
 	configure_inject();
-	configure_vnodes();
 	run_rc(in_image("/etc/rc"));
 	printf("\n=== init: done ===\n");
 	reboot(RB_HALT);

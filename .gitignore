@@ -19,6 +19,7 @@ vendor/hakios/userland/obj/
 vendor/hakios/userland/root/
 vendor/hakios/userland/sysroot/
 vendor/hakios/userland/*.apfs
+vendor/hakios/userland/system.layout
 vendor/hakios/userland/hello
 vendor/hakios/qemu/*.img
 vendor/hakios/qemu/payload.bin
