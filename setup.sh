@@ -3,6 +3,11 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 ROOT=$PWD
+gpu=${IOS_KVM_SETUP_GPU:-1}
+case "$gpu" in
+    0|1) ;;
+    *) echo 'IOS_KVM_SETUP_GPU must be 0 or 1.' >&2; exit 1 ;;
+esac
 mkdir -p .local firmware
 if [ -n "${1:-}" ]; then
     IPSW=$(realpath "$1")
@@ -27,6 +32,12 @@ if [ "${#missing[@]}" != 0 ]; then
     exit 1
 fi
 python3 -c 'import fontTools' || { echo 'Install python3-fonttools.' >&2; exit 1; }
+if [ "$gpu" = 1 ]; then
+    python3 tools/setup-gpu.py --check-deps || {
+        echo 'GPU build dependencies on Fedora: meson ninja-build pkgconf-pkg-config libglvnd-devel libepoxy-devel mesa-libgbm-devel python3-mako python3-pyyaml python3-packaging; LLVM tools are also required.' >&2
+        exit 1
+    }
+fi
 python3 tools/configure-firmware.py "$IPSW"
 if [ ! -d .local/sdks/iPhoneOS16.5.sdk/usr/include ]; then
     if [ ! -d .local/sdks/.git ]; then
@@ -52,5 +63,10 @@ fi
 )
 bash "$ROOT/tools/build-kernel.sh"
 python3 "$ROOT/tools/setup-storage.py"
-bash "$ROOT/tools/build.sh"
+if [ "$gpu" = 1 ]; then
+    python3 "$ROOT/tools/setup-gpu.py"
+    IOS_KVM_BUNDLE_GPU=1 IOS_KVM_GPU_BOOT=1 bash "$ROOT/tools/build.sh"
+else
+    bash "$ROOT/tools/build.sh"
+fi
 echo 'Local iOS images built. Run ./run.sh to start the VM.'

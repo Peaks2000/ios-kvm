@@ -2,6 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 python3 tools/prepare-virgl-mesa.py
+python3 tools/prepare-shared-gpu.py
 if [ ! -f .local/mesa-virgl-build/build.ninja ]; then
     meson setup .local/mesa-virgl-build .local/mesa-25.0.7 \
       --cross-file .local/mesa-virgl-cross.ini --wrap-mode=nofallback --buildtype=release \
