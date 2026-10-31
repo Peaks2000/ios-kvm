@@ -3,6 +3,30 @@
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
+vm_map = root / 'vendor/hakios/xnu-src/xnu-8796.121.2/osfmk/vm/vm_map.c'
+text = vm_map.read_text()
+old = '#if MACH_ASSERT\nint debug4k_filter = 0;'
+new = '#if MACH_ASSERT || DEVELOPMENT || DEBUG\nint debug4k_filter = 0;'
+if old in text:
+    text = text.replace(old, new, 1)
+old = 'int debug4k_proc_filter = (int)-1 & ~(1 << __DEBUG4K_FAULT);'
+new = '''#if MACH_ASSERT
+int debug4k_proc_filter = (int)-1 & ~(1 << __DEBUG4K_FAULT);
+#else
+int debug4k_proc_filter = 0; /* staged IOKit debug ABI; logging remains disabled */
+#endif'''
+if new not in text:
+    text = text.replace(old, new, 1)
+if vm_map.read_text() != text:
+    vm_map.write_text(text)
+exception = root / 'vendor/hakios/xnu-src/xnu-8796.121.2/osfmk/kern/exception.c'
+text = exception.read_text()
+declaration = 'extern int proc_pid(struct proc *p);'
+if declaration not in text:
+    anchor = 'extern char     *proc_name_address(struct proc *p);'
+    if text.count(anchor) != 1:
+        raise SystemExit('Unexpected exception.c process declarations')
+    exception.write_text(text.replace(anchor, anchor + '\n' + declaration, 1))
 startup = root / 'vendor/hakios/xnu-src/xnu-8796.121.2/osfmk/kern/startup.c'
 text = startup.read_text()
 old = 'extern void vnguard_policy_init(void);\nextern void minimac_policy_init(void);\n#endif'
