@@ -1,0 +1,6 @@
+# Local iOS VM integration: Ethernet and a key-authenticated SSH endpoint.
+/redwood/bin/net_test show dhcp en0 waitaddr en0 60 store
+/var/jb/usr/sbin/sshd -D -e -h /var/root/.ssh/ssh_host_ed25519_key -o UsePAM=no -o PasswordAuthentication=no -o PermitRootLogin=prohibit-password -o AuthorizedKeysFile=/var/root/.ssh/authorized_keys &
+/redwood/bin/net_test resolve apt.procurs.us
+/redwood/bin/sound_test springboard
+/var/jb/bin/sh /var/jb/prep.sh
