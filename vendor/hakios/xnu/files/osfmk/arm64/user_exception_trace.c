@@ -23,6 +23,7 @@
 #include <vm/vm_shared_region.h>
 
 extern char *proc_name_address(struct proc *p);
+extern int proc_pid(struct proc *p);
 
 void user_exception_trace(exception_type_t exception, mach_exception_data_t code, mach_msg_type_number_t count, thread_t thread);
 

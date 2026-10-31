@@ -3,6 +3,12 @@
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
+startup = root / 'vendor/hakios/xnu-src/xnu-8796.121.2/osfmk/kern/startup.c'
+text = startup.read_text()
+old = 'extern void vnguard_policy_init(void);\nextern void minimac_policy_init(void);\n#endif'
+new = 'extern void vnguard_policy_init(void);\n#endif\nextern void minimac_policy_init(void);'
+if old in text:
+    startup.write_text(text.replace(old, new, 1))
 path = root / 'vendor/hakios/xnu-src/xnu-8796.121.2/osfmk/arm64/machine_routines.c'
 text = path.read_text()
 old = '\tcdp->cpu_decrementer = dec_value;'

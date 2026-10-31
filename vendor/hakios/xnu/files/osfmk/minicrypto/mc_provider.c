@@ -40,7 +40,9 @@
 #endif
 
 extern void read_random(void *buffer, u_int numBytes);
+#ifndef printf
 extern int printf(const char *format, ...) __printflike(1, 2);
+#endif
 
 /* ------------------------------------------------------- kernel PRNG --- */
 
