@@ -3,6 +3,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include "gpu-ram-map.h"
 
 int vtest_ios_kvm_shared_get(uint32_t length_dw)
 {
@@ -34,17 +35,11 @@ int vtest_ios_kvm_shared_get(uint32_t length_dw)
       }
    }
    int fd = path && size ? open(path, O_RDWR | O_CLOEXEC | (memfd ? 0 : O_NOFOLLOW)) : -1;
-   struct stat info;
-   void *memory = MAP_FAILED;
-   int seals = memfd && fd >= 0 ? fcntl(fd, F_GET_SEALS) : 0;
-   bool sealed = !memfd || (seals >= 0 && (seals & (F_SEAL_GROW | F_SEAL_SHRINK)) ==
-                                          (F_SEAL_GROW | F_SEAL_SHRINK));
-   if (fd >= 0 && !fstat(fd, &info) && S_ISREG(info.st_mode) &&
-       sealed && info.st_uid == geteuid() && !(info.st_mode & 077) && (uint64_t)info.st_size >= size)
-      memory = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+   struct ios_kvm_ram_view mapping = {0};
+   int mapped = fd >= 0 ? ios_kvm_ram_map(fd, size, memfd, &mapping) : -EINVAL;
    if (fd >= 0) close(fd);
    int32_t status = -EINVAL;
-   if (memory != MAP_FAILED) {
+   if (!mapped) {
       uint64_t total = 0;
       bool valid = true;
       for (uint32_t i = 0; i < count; i++) {
@@ -54,7 +49,7 @@ int vtest_ios_kvm_shared_get(uint32_t length_dw)
              total > bytes || length > bytes - total) {
             valid = false; break;
          }
-         iov[i].iov_base = (char *)memory + (physical - 0x40000000);
+         iov[i].iov_base = (char *)mapping.address + (physical - 0x40000000);
          iov[i].iov_len = length;
          total += length;
       }
@@ -62,7 +57,7 @@ int vtest_ios_kvm_shared_get(uint32_t length_dw)
       if (valid && total == bytes && res)
          status = virgl_renderer_transfer_read_iov(res->res_id, ctx->ctx_id,
             args.level, args.stride, args.layer_stride, &args.box, args.offset, iov, count);
-      munmap(memory, size);
+      ios_kvm_ram_unmap(&mapping);
    }
    free(segments); free(iov);
    static unsigned transfers;

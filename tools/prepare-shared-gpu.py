@@ -19,6 +19,7 @@ def edit(path, old, new):
 
 shutil.copyfile(root / 'tools/gpu-shared-guest.h', mesa / 'gpu-shared-guest.h')
 shutil.copyfile(root / 'tools/gpu-shared-host.h', host / 'gpu-shared-host.h')
+shutil.copyfile(root / 'tools/gpu-ram-map.h', host / 'gpu-ram-map.h')
 edit(mesa / 'virgl_vtest_socket.c', '#include "gpu-transport.h"',
      '#include "gpu-transport.h"\n#include "gpu-shared-guest.h"')
 for name, old, new in (
