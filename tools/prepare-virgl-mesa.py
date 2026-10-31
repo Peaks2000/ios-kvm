@@ -86,6 +86,9 @@ lz4_source = vtest / 'lz4.c'
 lz4_source.write_text(lz4_source.read_text().replace(
     'int LZ4_loadDict_internal(', 'static int LZ4_loadDict_internal(', 1))
 shutil.copyfile(root / 'tools/gpu-transport.h', vtest / 'gpu-transport.h')
+edit('src/gallium/winsys/virgl/vtest/virgl_vtest_socket.c',
+     '   vws->sock_fd = sock;\n   virgl_vtest_send_init(vws);',
+     '   vws->sock_fd = sock;\n   ios_kvm_reset_frames(sock);\n   virgl_vtest_send_init(vws);')
 edit('src/gallium/winsys/virgl/vtest/meson.build',
      "['virgl_vtest_socket.c', 'virgl_vtest_winsys.c']",
      "['virgl_vtest_socket.c', 'virgl_vtest_winsys.c', 'lz4.c']")

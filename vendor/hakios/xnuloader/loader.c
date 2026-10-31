@@ -4101,6 +4101,19 @@ fw_cfg_read(void *buf, uint32_t len)
 static void
 ramfb_phone_screen(void)
 {
+	/* Keep the iPhone's logical size while allowing a lower-cost VM pixel density. */
+	uint32_t width = PHONE_WIDTH, height = PHONE_HEIGHT;
+	struct payload_info preview;
+	if (parse_payload(&preview, 0) && preview.cmdline != NULL) {
+		for (const char *arg = preview.cmdline; *arg != 0; arg++) {
+			if ((arg == preview.cmdline || arg[-1] == ' ') && starts_with(arg, "fbscale=2") &&
+			    (arg[9] == 0 || arg[9] == ' ')) {
+				width = 750;
+				height = 1624;
+				break;
+			}
+		}
+	}
 	static struct {
 		uint64_t addr;
 		uint32_t fourcc, flags, width, height, stride;
@@ -4121,7 +4134,7 @@ ramfb_phone_screen(void)
 		char name[56];
 	} file;
 	uint32_t count, select = 0;
-	uint64_t fb = 0, bytes = (uint64_t)PHONE_WIDTH * 4 * PHONE_HEIGHT;
+	uint64_t fb = 0, bytes = (uint64_t)width * 4 * height;
 
 	*(volatile uint16_t *)(FW_CFG_BASE + 8) = __builtin_bswap16(FW_CFG_FILE_DIR);
 	fw_cfg_read(&count, sizeof(count));
@@ -4139,9 +4152,9 @@ ramfb_phone_screen(void)
 	cfg.addr = __builtin_bswap64(fb);
 	cfg.fourcc = be32(0x34325258);          /* 'XR24': blue, green, red, unused */
 	cfg.flags = 0;
-	cfg.width = be32(PHONE_WIDTH);
-	cfg.height = be32(PHONE_HEIGHT);
-	cfg.stride = be32(PHONE_WIDTH * 4);
+	cfg.width = be32(width);
+	cfg.height = be32(height);
+	cfg.stride = be32(width * 4);
 	dma.control = be32(select << 16 | FW_CFG_DMA_SELECT | FW_CFG_DMA_WRITE);
 	dma.length = be32(sizeof(cfg));
 	dma.address = __builtin_bswap64((uint64_t)(uintptr_t)&cfg);
@@ -4156,9 +4169,9 @@ ramfb_phone_screen(void)
 		return;
 	}
 	SCREEN.base = fb;
-	SCREEN.width = PHONE_WIDTH;
-	SCREEN.height = PHONE_HEIGHT;
-	SCREEN.stride = PHONE_WIDTH * 4;
+	SCREEN.width = width;
+	SCREEN.height = height;
+	SCREEN.stride = width * 4;
 }
 
 /*

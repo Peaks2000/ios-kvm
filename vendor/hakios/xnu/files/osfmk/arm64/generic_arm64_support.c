@@ -6,6 +6,8 @@
 #include <arm/machine_routines.h>
 #include <arm/caches_internal.h>
 #include <arm/pmap.h>
+/* Optional TCG experiment; zero preserves normal deadlines. */
+uint32_t ios_kvm_timer_floor_ticks;
 
 /* No PPL / secure monitor to switch on. */
 void

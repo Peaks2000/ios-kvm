@@ -44,8 +44,14 @@ async def client(reader, writer):
         _done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for task in pending:
             task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-    except (ConnectionError, OSError, asyncio.IncompleteReadError) as error:
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, Exception):
+                raise result
+    except asyncio.IncompleteReadError as error:
+        if error.partial:
+            print(error, flush=True)
+    except (ConnectionError, OSError, ValueError) as error:
         print(error, flush=True)
     finally:
         writer.close()

@@ -30,6 +30,34 @@
 
 #include "MiniIOSurface.h"
 
+#include <kern/clock.h>
+#include <sys/sysctl.h>
+#include <os/atomic_private.h>
+
+extern "C" uint32_t ios_kvm_timer_floor_ticks;
+static int ios_kvm_timer_floor_us;
+
+static int
+ios_kvm_timer_floor_sysctl SYSCTL_HANDLER_ARGS
+{
+#pragma unused(arg1, arg2)
+    int value = ios_kvm_timer_floor_us;
+    int error = sysctl_handle_int(oidp, &value, 0, req);
+    if (!error && req->newptr != USER_ADDR_NULL) {
+        if (value < 0 || value > 10000) return EINVAL;
+        uint64_t ticks;
+        nanoseconds_to_absolutetime((uint64_t)value * 1000, &ticks);
+        if (ticks > UINT32_MAX) return EINVAL;
+        ios_kvm_timer_floor_us = value;
+        os_atomic_store(&ios_kvm_timer_floor_ticks, (uint32_t)ticks, relaxed);
+    }
+    return error;
+}
+
+SYSCTL_PROC(_kern, OID_AUTO, ios_kvm_timer_floor_us, CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_LOCKED,
+    0, 0, ios_kvm_timer_floor_sysctl, "I", "Experimental minimum timer interval in microseconds (0: unchanged)");
+
+
 static_assert(sizeof(struct minisurf_plane) == 0x80, "plane layout");
 static_assert(sizeof(struct minisurf_result) == 0x68, "result layout");
 static_assert(offsetof(struct minisurf_shared, attachments) == 0x30, "shared layout");
@@ -892,6 +920,9 @@ class IOSurfaceRootUserClient : public IOUserClient
 	OSDeclareDefaultStructors(IOSurfaceRootUserClient);
 
 	task_t                          fTask;
+	/* Optional VM transfer buffer: wired only while the owning connection holds it. */
+	IOMemoryDescriptor *            fHostMemory;
+	IOLock *                        fHostLock;
 	struct minisurf_client_ref *    fRefs;
 	uint32_t                        fRefCount;
 	uint32_t                        fRefCapacity;
@@ -903,6 +934,7 @@ class IOSurfaceRootUserClient : public IOUserClient
 	IOReturn returnSurface(struct minisurf_client_ref * ref, bool known, IOExternalMethodArguments * args);
 
 	IOReturn methodInit(IOExternalMethodArguments * args);
+	IOReturn methodHostMemory(IOExternalMethodArguments * args, bool release);
 	IOReturn methodCreate(IOExternalMethodArguments * args);
 	IOReturn methodLookup(IOExternalMethodArguments * args);
 	IOReturn methodLookupFromPort(IOExternalMethodArguments * args);
@@ -941,6 +973,10 @@ IOSurfaceRootUserClient::initWithTask(task_t owningTask, void * securityID, UInt
 		return false;
 	}
 	fTask = owningTask;
+	fHostLock = IOLockAlloc();
+	if (fHostLock == NULL) {
+		return false;
+	}
 	return true;
 }
 
@@ -965,6 +1001,14 @@ IOSurfaceRootUserClient::start(IOService * provider)
 IOReturn
 IOSurfaceRootUserClient::clientClose(void)
 {
+	if (fHostLock != NULL) {
+		IOLockLock(fHostLock);
+		if (fHostMemory != NULL) {
+			fHostMemory->complete(kIODirectionInOut);
+			OSSafeReleaseNULL(fHostMemory);
+		}
+		IOLockUnlock(fHostLock);
+	}
 	IOLockLock(gSurfaceLock);
 	while (fRefCount != 0) {
 		dropRef(&fRefs[fRefCount - 1]);
@@ -979,6 +1023,14 @@ IOSurfaceRootUserClient::clientClose(void)
 void
 IOSurfaceRootUserClient::free(void)
 {
+	if (fHostMemory != NULL) {
+		fHostMemory->complete(kIODirectionInOut);
+		OSSafeReleaseNULL(fHostMemory);
+	}
+	if (fHostLock != NULL) {
+		IOLockFree(fHostLock);
+		fHostLock = NULL;
+	}
 	if (fRefs != NULL) {
 		if (gSurfaceLock != NULL) {
 			IOLockLock(gSurfaceLock);
@@ -1589,6 +1641,90 @@ IOSurfaceRootUserClient::methodSetBulkAttachments(const uint8_t * in, size_t inS
 	return ret;
 }
 
+/*
+ * ios-kvm selectors 0x100/0x101: pin/unpin a buffer in this connection's owning task.
+ * The host transfer service receives physical segments instead of pixel bytes over TCP.
+ * Explicitly opt-in: these are VM transport metadata, never an arbitrary physical-memory API.
+ * Pin: scalar input [user address, byte count]; structure output pairs [physical, length].
+ * The caller must keep the connection and allocation alive until host acknowledgement.
+ */
+IOReturn
+IOSurfaceRootUserClient::methodHostMemory(IOExternalMethodArguments * args, bool release)
+{
+	int enabled = 0;
+	if (!PE_parse_boot_argn("gpu_shared", &enabled, sizeof(enabled)) || !enabled || fTask != current_task()) {
+		return kIOReturnUnsupported;
+	}
+	IOLockLock(fHostLock);
+	if (release) {
+		if (fHostMemory != NULL) {
+			fHostMemory->complete(kIODirectionInOut);
+			OSSafeReleaseNULL(fHostMemory);
+		}
+		IOLockUnlock(fHostLock);
+		return kIOReturnSuccess;
+	}
+	if (fHostMemory != NULL) {
+		IOLockUnlock(fHostLock);
+		return kIOReturnBusy;
+	}
+	if (args->scalarInputCount != 2 || args->scalarInput[1] == 0 ||
+	    args->scalarInput[1] > 64 * 1024 * 1024 || args->scalarInput[0] + args->scalarInput[1] < args->scalarInput[0]) {
+		IOLockUnlock(fHostLock);
+		return kIOReturnBadArgument;
+	}
+	IOMemoryMap * outputMap = NULL;
+	void * output = args->structureOutput;
+	size_t capacity = args->structureOutputSize;
+	if (args->structureOutputDescriptor != NULL) {
+		outputMap = args->structureOutputDescriptor->map();
+		output = outputMap != NULL ? (void *) outputMap->getVirtualAddress() : NULL;
+		capacity = args->structureOutputDescriptor->getLength();
+	}
+	IOReturn ret = kIOReturnBadArgument;
+	IOMemoryDescriptor * memory = NULL;
+	if (output != NULL && capacity >= 16 && capacity <= 65536) {
+		memory = IOMemoryDescriptor::withAddressRange(args->scalarInput[0], args->scalarInput[1],
+		    kIODirectionInOut | kIOMemoryMapperNone, fTask);
+		ret = memory != NULL ? memory->prepare(kIODirectionInOut) : kIOReturnNoMemory;
+		if (ret == kIOReturnSuccess) {
+			uint64_t * segments = (uint64_t *) output;
+			uint64_t offset = 0, bytes = args->scalarInput[1];
+			size_t count = 0;
+			while (offset < bytes) {
+				IOByteCount length = 0;
+				IOPhysicalAddress physical = memory->getPhysicalSegment(offset, &length);
+				if (physical == 0 || length == 0 || count >= capacity / 16) {
+					ret = kIOReturnNoSpace;
+					break;
+				}
+				if (length > bytes - offset) {
+					length = bytes - offset;
+				}
+				segments[count * 2] = physical;
+				segments[count * 2 + 1] = length;
+				count++;
+				offset += length;
+			}
+			if (ret == kIOReturnSuccess) {
+				if (args->structureOutputDescriptor != NULL) {
+					args->structureOutputDescriptorSize = (uint32_t)(count * 16);
+				} else {
+					args->structureOutputSize = (uint32_t)(count * 16);
+				}
+				fHostMemory = memory;
+				memory = NULL;
+			} else {
+				memory->complete(kIODirectionInOut);
+			}
+		}
+	}
+	OSSafeReleaseNULL(memory);
+	OSSafeReleaseNULL(outputMap);
+	IOLockUnlock(fHostLock);
+	return ret;
+}
+
 IOReturn
 IOSurfaceRootUserClient::externalMethod(uint32_t selector, IOExternalMethodArguments * args,
     IOExternalMethodDispatch * dispatch, OSObject * target, void * reference)
@@ -1600,6 +1736,10 @@ IOSurfaceRootUserClient::externalMethod(uint32_t selector, IOExternalMethodArgum
 	IOReturn ret;
 
 	switch (selector) {
+	case 0x100:
+		return methodHostMemory(args, false);
+	case 0x101:
+		return methodHostMemory(args, true);
 	case kSurfaceMethodInit:
 		return methodInit(args);
 	case kSurfaceMethodCreate:

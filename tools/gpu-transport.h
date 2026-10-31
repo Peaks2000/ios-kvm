@@ -3,6 +3,8 @@
 
 static int virgl_block_write(int fd, void *data, int size)
 {
+   if (size <= 0)
+      return size == 0 ? 0 : -EINVAL;
    uint32_t header[2] = { (uint32_t)size, 0 };
    char *packet = malloc((size_t)size + 8);
    if (!packet)
@@ -19,6 +21,16 @@ static struct {
    char *bytes;
    uint32_t size, at;
 } ios_kvm_frames[1024];
+
+static void ios_kvm_reset_frames(int fd)
+{
+   if (fd < 0 || fd >= 1024)
+      return;
+   free(ios_kvm_frames[fd].bytes);
+   ios_kvm_frames[fd].bytes = NULL;
+   ios_kvm_frames[fd].size = 0;
+   ios_kvm_frames[fd].at = 0;
+}
 
 static int virgl_block_read(int fd, void *data, int size)
 {

@@ -1044,17 +1044,26 @@ opengl_es(void)
 	io_service_t gpu;
 	void *library;
 	int wanted = -1, told = 0;
+	const char *library_path = HAKIOS_GL;
 
 #ifdef IOS_KVM_VIRGL
 	setenv("GALLIUM_DRIVER", "virpipe", 1);
 	wanted = 1;
 	told = 1;
+	if (access(library_path, R_OK) != 0) {
+		library_path = "/redwood/share/gpu-bundle/libhakios.gl.dylib";
+	}
 #endif
 
-	if (access(HAKIOS_GL, R_OK) != 0) {
+	if (access(library_path, R_OK) != 0) {
 		return;                                 /* (an image built without it) */
 	}
 	if (sysctlbyname("kern.bootargs", arguments, &size, NULL, 0) == 0) {
+#ifdef IOS_KVM_VIRGL
+		if (strstr(arguments, "gpu_shared=1") != NULL) {
+			setenv("IOS_KVM_SHARED", "1", 1);
+		}
+#endif
 		functions_said_yes(arguments);
 		compile_shaders_said = strstr(arguments, "glcompile=1") != NULL;
 		for (argument = arguments; (argument = strstr(argument, "gl=")) != NULL; argument += 3) {
@@ -1075,8 +1084,8 @@ opengl_es(void)
 		say("hakios: %s: CoreAnimation keeps its software renderer\n", told ? "gl=0" : "no GPU to draw with");
 		return;
 	}
-	if ((library = dlopen(HAKIOS_GL, RTLD_NOW)) == NULL) {
-		say("hakios: %s: %s\n", HAKIOS_GL, dlerror());
+	if ((library = dlopen(library_path, RTLD_NOW)) == NULL) {
+		say("hakios: %s: %s\n", library_path, dlerror());
 		return;
 	}
 	gl_loaded = 1;

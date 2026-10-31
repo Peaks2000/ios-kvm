@@ -20,6 +20,7 @@ with (out / 'eagl_gen.h').open('w') as header:
 common = ['clang', '-Qunused-arguments', '-target', 'arm64-apple-ios16.0', '-isysroot',
           str(root / '.local/sdks/iPhoneOS16.5.sdk'), '-fuse-ld=lld', '-O2', '-dynamiclib',
           '-Wl,-rpath,/var/tmp/ios-kvm-gpu', '-Wl,-rpath,/redwood/lib']
+common += ['-Wl,-rpath,/redwood/share/gpu-bundle']
 subprocess.run(common + ['-install_name', '/redwood/lib/libhakios.gl.dylib', '-I', str(out),
                         '-framework', 'CoreFoundation', '-framework', 'IOKit', '-framework', 'IOSurface',
                         '-lobjc', str(library), '-o', str(out / 'libhakios.gl.dylib'),
@@ -30,4 +31,8 @@ subprocess.run(common + ['-DIOS_KVM_VIRGL=1',
                         '-framework', 'CoreFoundation', '-framework', 'IOKit', '-lobjc',
                         '-o', str(out / 'libios-kvm-gpu.dylib'), str(src / 'inject.c')], check=True)
 shutil.copyfile(library, out / 'libOSMesa.8.dylib')
+subprocess.run(['clang', '-target', 'arm64-apple-ios16.0', '-isysroot',
+                str(root / '.local/sdks/iPhoneOS16.5.sdk'), '-fuse-ld=lld', '-O2',
+                '-I', str(mesa / 'include'), '-Wl,-rpath,@executable_path',
+                str(root / 'tools/gpu-bench.c'), str(library), '-o', str(out / 'gpu-bench')], check=True)
 print(f'Built EAGL bridge with {len(exports)} exported GL entry points')

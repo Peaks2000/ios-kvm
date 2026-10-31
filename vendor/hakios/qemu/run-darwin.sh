@@ -72,6 +72,27 @@ while done < total:
 PY
 	printf '%s\n' "$LAYOUT" > qemu/ram.layout
 fi
+MEMORY_FILE="$PWD/qemu/ram.img"
+MEMORY_SHARE=off
+if [ "${QEMU_SHARED_RAM:-0}" = memfd ] || [ "${QEMU_SHARED_RAM:-0}" = 1 ]; then
+	if [ -z "${QEMU_MEMFD_PATH:-}" ]; then
+		exec python3 ../../tools/ram-memfd.py "$MEMORY_FILE" "$RAM_SIZE" bash "$PWD/qemu/run-darwin.sh" "$SECS" "$@"
+	fi
+	MEMORY_FILE="$QEMU_MEMFD_PATH"
+	MEMORY_SHARE=on
+	CMDLINE="gpu_shared=1 $CMDLINE"
+elif [ "${QEMU_SHARED_RAM:-0}" = file ]; then
+	# Keep the pristine boot image immutable. Each instance exposes only its private clone.
+	MEMORY_FILE="$PWD/qemu/ram.session.$INSTANCE.img"
+	MEMORY_TEMP=$(umask 077; mktemp "$MEMORY_FILE.XXXXXX") || exit 1
+	if ! cp --reflink=auto --sparse=always qemu/ram.img "$MEMORY_TEMP" || ! chmod 600 "$MEMORY_TEMP" ||
+	    ! mv -f "$MEMORY_TEMP" "$MEMORY_FILE"; then
+		rm -f "$MEMORY_TEMP"
+		exit 1
+	fi
+	MEMORY_SHARE=on
+	CMDLINE="gpu_shared=1 $CMDLINE"
+fi
 NET=()
 if [ -n "$QEMU_NET" ] && [ "$QEMU_NET" != 0 ]; then
 	NET=(-netdev "user,id=net0,hostfwd=tcp:127.0.0.1:${QEMU_SSH_PORT:-2222}-:22" -device virtio-net-device,netdev=net0)
@@ -91,7 +112,7 @@ xnuloader/mkpayload.py -o qemu/payload.bin kernel=$K ramdisk=$ROOT --physbase f8
 	--cmdline "loader_return_after=$SECS epoch=$(date +%s) virtio_input=1 $CMDLINE" >/dev/null || exit 1
 LIMIT=$((SECS + 40)); [ "$SECS" = 0 ] && LIMIT=0
 QEMU_MEM=${RAM_GB}G exec qemu/run.sh "$LIMIT" \
-	-object memory-backend-file,id=ram,size=$RAM_SIZE,mem-path="$PWD/qemu/ram.img",share=off \
+	-object memory-backend-file,id=ram,size=$RAM_SIZE,mem-path="$MEMORY_FILE",share=$MEMORY_SHARE \
 	-machine memory-backend=ram \
 	-global virtio-mmio.force-legacy=false -device virtio-tablet-device -device virtio-keyboard-device "${NET[@]}" "${SOUND[@]}" \
 	-device ramfb -monitor tcp:127.0.0.1:$((4444 + 10 * INSTANCE)),server,nowait \
