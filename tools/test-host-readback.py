@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import time
 from gpu_host import select_gpu
+from virgl_draw import build_draw_encoder, expected_pixel, pixels_match
 
 
 def main():
@@ -20,12 +21,14 @@ def main():
     parser.add_argument('--server', type=Path, required=True)
     parser.add_argument('--mode', choices=('auto', 'hardware', 'software'), default='auto')
     parser.add_argument('--frames', type=int, default=24)
+    parser.add_argument('--draw', action='store_true', help='Submit real TGSI vertex/fragment shaders and alpha-blended triangles')
     args = parser.parse_args()
     if args.frames < 5:
         parser.error('--frames must be at least 5')
     profile = select_gpu(args.mode)['selected']
     if not profile:
         raise RuntimeError('No validated host renderer')
+    encoder = build_draw_encoder() if args.draw else None
     width, height = 750, 1624
     byte_count = width * height * 4
     first, split, gap = 4096, byte_count // 2 + 7, 65536
@@ -72,6 +75,8 @@ def main():
                             raise RuntimeError('Invalid capabilities')
                         read(length-1)
                         send(2, struct.pack('<10I', 1, 2, 67, 10, width, height, 1, 1, 0, 0))
+                        if args.draw:
+                            send(2, struct.pack('<10I', 2, 0, 64, 16, 96, 1, 1, 1, 0, 0))
                         transfer = struct.pack('<11I', 1, 0, width*4, 0, 0, 0, 0, width, height, 1, byte_count)
                         segments = struct.pack('<4Q', 0x40000000+first, split,
                                                0x40000000+second, byte_count-split)
@@ -79,8 +84,13 @@ def main():
                         samples = []
                         for frame in range(args.frames):
                             pixel = bytes((frame*13 % 256, frame*29 % 256, frame*37 % 256, 255))
+                            if args.draw:
+                                commands = subprocess.check_output([str(encoder),str(frame),str(width),str(height)])
+                                send(6, commands)
+                                pixel = expected_pixel(frame)
+                            else:
+                                send(5, transfer + pixel * (width*height), 11)
                             payload = pixel * (width*height)
-                            send(5, transfer + payload, 11)
                             start = time.perf_counter_ns()
                             send(64, shared)
                             status, = struct.unpack('<i', read(4))
@@ -89,7 +99,10 @@ def main():
                                 raise RuntimeError(f'Transfer failed: {status}')
                             actual = memory[first:first+split] + memory[second:second+byte_count-split]
                             if actual != payload:
-                                raise RuntimeError(f'Pixel mismatch on fresh frame {frame}')
+                                # Shader interpolation/blend quantization may round by one unit.
+                                mismatch = not args.draw or not pixels_match(actual,pixel)
+                                if mismatch:
+                                    raise RuntimeError(f'Pixel mismatch on fresh frame {frame}: expected {list(pixel)}, first {list(actual[:4])}')
                             if memory[:first] != b'\xa5'*first or memory[first+split:second] != b'\xa5'*gap or \
                                memory[span-4096:] != b'\xa5'*4096:
                                 raise RuntimeError('Padding guard overwritten')
@@ -102,7 +115,7 @@ def main():
                         send(64, shared)
                         if struct.unpack('<i', read(4))[0]:
                             raise RuntimeError('Valid transfer failed after rejected segment')
-                        print(f'host shared readback: renderer={profile["renderer"]} frames={args.frames} '
+                        print(f'host shared {"shader draw" if args.draw else "upload"} readback: renderer={profile["renderer"]} frames={args.frames} '
                               f'bytes={byte_count} segments=2 median_us={statistics.median(samples):.1f} '
                               'fresh_pixels=pass padding=pass invalid_range=pass recovery=pass')
                 except Exception:

@@ -12,6 +12,7 @@ import struct
 import tempfile
 import time
 import shlex
+from virgl_draw import probe_draw
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -101,8 +102,9 @@ def probe_vtest(profile):
                     if offset < 0:
                         raise RuntimeError('VirGL selected a different renderer from the EGL probe')
                     actual = caps[offset:offset+64].split(b'\0', 1)[0].decode(errors='replace')
-                    return {'ok': True, 'caps_bytes': len(caps), 'renderer': actual}
-            except (OSError, RuntimeError) as error:
+                    draw = probe_draw(connection)
+                    return {'ok': True, 'caps_bytes': len(caps), 'renderer': actual, 'draw': draw}
+            except (OSError, RuntimeError, subprocess.SubprocessError) as error:
                 log.seek(0)
                 return {'ok': False, 'error': str(error), 'log': log.read(4096).decode(errors='replace')}
             finally:
