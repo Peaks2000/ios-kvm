@@ -1,5 +1,6 @@
 # ios-kvm 
-##(not actually based on kvm it is named after another ponect called osx-kvm)
+
+# (not actually based on kvm it is named after another ponect called osx-kvm)
 
 Phone X iOS 16.7.16 (20H392) firmware in QEMU on Linux.
 
@@ -9,7 +10,7 @@ Place your own iPhone X iOS 16.7.16 IPSW in `firmware/`, then run `./setup.sh`; 
 
 `./run.sh` starts QEMU's native GTK display with zoom-to-fit, four guest CPUs and 9 GiB mapped guest RAM, w Set `QEMU_SMP`, `QEMU_RAM_GB` or `VM_DISPLAY` to change these. ARM-on-x86 uses TCG; the CPU is emulated. 
 
-##warning
+## warning
 Only tested on Fedora Linux with a  Ryzen 7 7435HS, 16 GiB RAM, RTX 4060.
 
 `bash tools/ssh.sh` connects to root SSH through `127.0.0.1:2222` using a local key. There is no password login for VNC 
