@@ -20,6 +20,8 @@ OpenGL in the viewer accelerates host-side display scaling, independently of the
 
 `bash tools/ssh.sh` connects to root SSH through `127.0.0.1:2222` using a dedicated local key. Password authentication depends on your local SSH configuration and account database. When enabled, diagnostic VNC listens at `127.0.0.1:5901`. The writable data disk retains files and packages across VM restarts; a local first-boot snapshot is imported only once when present. Installed tweak loading and repeated Sileo GUI installations still need verification.
 
+To restart the iOS interface without rebooting the VM, run `bash tools/respring.sh`. This uses the guest's `sbreload` over SSH, with a SpringBoard restart as a fallback.
+
 ## Updating safely
 
 Stop the VM, then run:
