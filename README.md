@@ -114,6 +114,11 @@ The kernel completion API itself requires both `gpu_shared=1` and `gpu_async=1`.
 
 Apple firmware, extracted system files and generated device identity data are local inputs and are not distributed in this repository.
 
+The separate [native GLES research backend](tools/native-gl/README.md) moves GL
+processing out of guest Mesa. It has an isolated build/check workflow and is not
+yet connected to EAGL or selected by the launcher. Its current API checks are
+correctness tests, not desktop performance results.
+
 ## CPU regression checks
 
 `python3 tools/test-tcg-timers.py --record-replay /path/to/qemu-system-aarch64`
