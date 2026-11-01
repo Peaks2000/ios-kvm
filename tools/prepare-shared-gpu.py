@@ -18,6 +18,7 @@ def edit(path, old, new):
     path.write_text(text.replace(old, new, 1))
 
 shutil.copyfile(root / 'tools/gpu-shared-guest.h', mesa / 'gpu-shared-guest.h')
+shutil.copyfile(root / 'tools/gpu-shared-request.h', mesa / 'gpu-shared-request.h')
 shutil.copyfile(root / 'tools/gpu-shared-host.h', host / 'gpu-shared-host.h')
 shutil.copyfile(root / 'tools/gpu-ram-map.h', host / 'gpu-ram-map.h')
 edit(mesa / 'virgl_vtest_socket.c', '#include "gpu-transport.h"',

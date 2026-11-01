@@ -1,13 +1,14 @@
 /* ios-kvm experimental shared-RAM readback. Included by Mesa's vtest transport. */
 #include <IOKit/IOKitLib.h>
 #include <mach/mach.h>
+#include "gpu-shared-request.h"
 
 struct ios_kvm_pin {
    io_connect_t connection;
    void *destination;
    uint32_t bytes, count;
    size_t length;
-   uint64_t segments[8192];
+   struct ios_kvm_shared_request request;
 };
 
 /* An explicit owner keeps the allocation alive until lease_destroy; no address-based caching. */
@@ -27,8 +28,8 @@ __attribute__((visibility("default"))) void *ios_kvm_readback_lease_create(void 
    if (service) IOObjectRelease(service);
    if (status) { free(pin); return NULL; }
    uint64_t input[2] = {(uintptr_t)destination, bytes};
-   pin->length = sizeof(pin->segments);
-   status = IOConnectCallMethod(pin->connection, 0x100, input, 2, NULL, 0, NULL, NULL, pin->segments, &pin->length);
+   pin->length = sizeof(pin->request.segments);
+   status = IOConnectCallMethod(pin->connection, 0x100, input, 2, NULL, 0, NULL, NULL, pin->request.segments, &pin->length);
    if (status) { IOServiceClose(pin->connection); free(pin); return NULL; }
    pin->destination = destination;
    pin->bytes = bytes;
@@ -56,12 +57,19 @@ static int ios_kvm_submit_pin(struct virgl_vtest_winsys *vws, uint32_t handle,
                              uint32_t level, uint32_t stride, uint32_t layer_stride,
                              const struct pipe_box *box, struct ios_kvm_pin *pin)
 {
-   uint32_t header[2] = {12 + pin->count * 4, 64};
    uint32_t args[12] = {handle, level, stride, layer_stride,
       box->x, box->y, box->z, box->width, box->height, box->depth, pin->bytes, pin->count};
-   int ret = virgl_block_write(vws->sock_fd, header, sizeof(header));
-   if (ret > 0) ret = virgl_block_write(vws->sock_fd, args, sizeof(args));
-   if (ret > 0) ret = virgl_block_write(vws->sock_fd, pin->segments, pin->length);
+   size_t size = ios_kvm_prepare_shared_request(&pin->request, args, pin->length);
+   if (!size) return -1;
+   const char *batch = getenv("IOS_KVM_SHARED_BATCH");
+   int ret;
+   if (!batch || strcmp(batch, "1")) {
+      ret = virgl_block_write(vws->sock_fd, pin->request.words, 8);
+      if (ret > 0) ret = virgl_block_write(vws->sock_fd, pin->request.words + 2, sizeof(args));
+      if (ret > 0) ret = virgl_block_write(vws->sock_fd, pin->request.segments, pin->length);
+   } else {
+      ret = virgl_block_write(vws->sock_fd, pin->request.words, size);
+   }
    int32_t reply = -1;
    if (ret > 0) ret = virgl_block_read(vws->sock_fd, &reply, sizeof(reply));
    return ret == sizeof(reply) && reply == 0 ? 1 : -1;
@@ -94,9 +102,9 @@ int virgl_vtest_direct_get(struct virgl_vtest_winsys *vws, uint32_t handle,
       vws->ios_kvm_direct_pin = pin;
    }
    uint64_t input[2] = {(uintptr_t)pixels, bytes};
-   pin->length = sizeof(pin->segments);
+   pin->length = sizeof(pin->request.segments);
    kern_return_t status = IOConnectCallMethod(pin->connection, 0x100, input, 2, NULL, 0,
-                                             NULL, NULL, pin->segments, &pin->length);
+                                             NULL, NULL, pin->request.segments, &pin->length);
    if (status) return 0;
    pin->bytes = bytes;
    pin->count = pin->length / 16;
@@ -140,9 +148,9 @@ int virgl_vtest_shared_get(struct virgl_vtest_winsys *vws,
       if (service) IOObjectRelease(service);
       if (status) { free(pin); return 0; }
       uint64_t input[2] = {(uintptr_t)destination, bytes};
-      pin->length = sizeof(pin->segments);
+      pin->length = sizeof(pin->request.segments);
       status = IOConnectCallMethod(pin->connection, 0x100, input, 2, NULL, 0,
-                                  NULL, NULL, pin->segments, &pin->length);
+                                  NULL, NULL, pin->request.segments, &pin->length);
       if (status) { IOServiceClose(pin->connection); free(pin); return 0; }
       pin->destination = destination;
       pin->bytes = bytes;
