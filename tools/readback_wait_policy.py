@@ -5,13 +5,19 @@ PREVIOUS = '''   const char *skip_wait = getenv("IOS_KVM_READBACK_SKIP_WAIT");
    if (!skip_wait || strcmp(skip_wait, "1"))
       vws->resource_wait(vws, res->hw_res);
    return vws->ios_kvm_readback'''
-CURRENT = '''   const char *skip_wait = getenv("IOS_KVM_READBACK_SKIP_WAIT");
+MARKER_PREVIOUS = '''   const char *skip_wait = getenv("IOS_KVM_READBACK_SKIP_WAIT");
    bool skip = skip_wait && (!strcmp(skip_wait, "1") ||
       (!strcmp(skip_wait, "marker") && access("/var/tmp/ios-kvm-readback-skip-wait", F_OK) == 0));
    if (!skip)
       vws->resource_wait(vws, res->hw_res);
    return vws->ios_kvm_readback'''
 
+CURRENT = '''   const char *skip_wait = getenv("IOS_KVM_READBACK_SKIP_WAIT");
+   bool skip = ios_kvm_skip_readback_wait(vws->ios_kvm_readback_sync, skip_wait,
+      skip_wait && !strcmp(skip_wait, "marker") && access("/var/tmp/ios-kvm-readback-skip-wait", F_OK) == 0);
+   if (!skip)
+      vws->resource_wait(vws, res->hw_res);
+   return vws->ios_kvm_readback'''
 
 def patch(text):
     if CURRENT in text:
@@ -19,7 +25,7 @@ def patch(text):
             raise ValueError('Ambiguous direct-readback wait implementation')
         return text
     # Match the older experiment BEFORE the bare wait, which is also its suffix.
-    for old in (PREVIOUS, BASE):
+    for old in (MARKER_PREVIOUS, PREVIOUS, BASE):
         if old in text:
             if text.count(old) != 1:
                 raise ValueError('Ambiguous direct-readback wait implementation')

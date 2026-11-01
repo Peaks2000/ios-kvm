@@ -179,13 +179,17 @@ int virgl_vtest_shared_get(struct virgl_vtest_winsys *vws,
                                  bytes, destination, resource, 64);
 }
 
+int virgl_vtest_shared_upload_enabled(struct virgl_vtest_winsys *vws)
+{
+   return ios_kvm_upload_policy(vws->ios_kvm_features, getenv("IOS_KVM_SHARED_UPLOAD"));
+}
+
 int virgl_vtest_shared_put(struct virgl_vtest_winsys *vws,
                           uint32_t handle, uint32_t level, uint32_t stride,
                           uint32_t layer_stride, const struct pipe_box *box,
                           uint32_t bytes, void *source, struct virgl_hw_res *resource)
 {
-   const char *enabled = getenv("IOS_KVM_SHARED_UPLOAD");
-   if (!enabled || strcmp(enabled, "1") || bytes < IOS_KVM_SHARED_UPLOAD_MIN_BYTES) return 0;
+   if (!virgl_vtest_shared_upload_enabled(vws) || bytes < IOS_KVM_SHARED_UPLOAD_MIN_BYTES) return 0;
    /* Pin only for this synchronous upload: staging caches must not keep
     * arbitrary source allocations wired after the host has consumed them. */
    (void)resource;

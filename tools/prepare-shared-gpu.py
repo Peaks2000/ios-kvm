@@ -11,6 +11,14 @@ host = root / '.local/virglrenderer/vtest'
 
 def edit(path, old, new):
     text = path.read_text()
+    if old == '   flags = bw_buf[VCMD_BUSY_WAIT_FLAGS];' and 'goto ios_kvm_feature_reply;' in text:
+        return
+    if old == 'int virgl_vtest_connect(struct virgl_vtest_winsys *vws)' and 'static int ios_kvm_query_features(' in text:
+        return
+    if old == '   virgl_vtest_send_transfer_put(vtws, res->res_handle,' and 'virgl_vtest_shared_put(vtws,' in text:
+        return
+    if old == 'int vtest_transfer_get(UNUSED uint32_t length_dw)' and '#include "gpu-shared-host.h"' in text:
+        return
     if new in text:
         return
     if old not in text:
@@ -36,9 +44,11 @@ prototype = '''int virgl_vtest_shared_get(struct virgl_vtest_winsys *vws,
                           uint32_t layer_stride, const struct pipe_box *box,
                           uint32_t bytes, void *destination, struct virgl_hw_res *resource);
 '''
+prototype += 'int virgl_vtest_shared_upload_enabled(struct virgl_vtest_winsys *vws);\n'
 header = mesa / 'virgl_vtest_winsys.h'
 text = re.sub(r'int virgl_vtest_shared_get\([^;]+;\n*', '', header.read_text())
 text = re.sub(r'int virgl_vtest_shared_put\([^;]+;\n*', '', text)
+text = re.sub(r'int virgl_vtest_shared_upload_enabled\([^;]+;\n*', '', text)
 text = re.sub(r'void virgl_vtest_shared_release\([^;]+;\n*', '', text)
 text = text.replace('int virgl_vtest_connect(', prototype +
                     'void virgl_vtest_shared_release(struct virgl_hw_res *resource);\n\nint virgl_vtest_connect(', 1)
@@ -72,7 +82,7 @@ edit(host / 'vtest_server.c', '   HANDLER(GET_CAPS,                send_caps,   
 print('Prepared experimental shared-RAM GPU transfer')
 subprocess.run(['python3', str(root / 'tools/prepare-direct-readback.py')], check=True)
 
-# Uploads are opt-in and use a separate command on an updated host renderer.
+# Shared uploads use a separate command on a negotiated, updated host renderer.
 edit(mesa / 'virgl_vtest_winsys.h',
      'void virgl_vtest_shared_release(struct virgl_hw_res *resource);',
      'int virgl_vtest_shared_put(struct virgl_vtest_winsys *vws,\n                          uint32_t handle, uint32_t level, uint32_t stride,\n                          uint32_t layer_stride, const struct pipe_box *box,\n                          uint32_t bytes, void *source, struct virgl_hw_res *resource);\nvoid virgl_vtest_shared_release(struct virgl_hw_res *resource);')
@@ -90,3 +100,35 @@ edit(mesa / 'virgl_vtest_socket.c', '   address.sin_port = htons(6712);',
 
 edit(mesa / 'virgl_vtest_winsys.c', '#include "virgl_vtest_winsys.h"',
      '#include "virgl_vtest_winsys.h"\n#include "gpu-shared-request.h"')
+
+# Negotiate before using the extension; explicit mode1 also requires support.
+edit(mesa / 'virgl_vtest_winsys.h', '   unsigned protocol_version;',
+     '   unsigned protocol_version;\n   uint32_t ios_kvm_features;')
+edit(mesa / 'virgl_vtest_winsys.c',
+     '   const char *upload = getenv("IOS_KVM_SHARED_UPLOAD");',
+     '   int upload = virgl_vtest_shared_upload_enabled(vtws);')
+path = mesa / 'virgl_vtest_winsys.c'
+path.write_text(path.read_text().replace('upload && !strcmp(upload, "1") &&', 'upload &&'))
+shutil.copyfile(root / 'tools/gpu-shared-request.h', host / 'gpu-shared-request.h')
+edit(host / 'vtest_renderer.c', '#include "gpu-shared-host.h"',
+     '#include "gpu-shared-host.h"\n#include "gpu-shared-request.h"')
+edit(host / 'vtest_renderer.c',
+     '   flags = bw_buf[VCMD_BUSY_WAIT_FLAGS];',
+     '   flags = bw_buf[VCMD_BUSY_WAIT_FLAGS];\n   if (length_dw == VCMD_BUSY_WAIT_SIZE && bw_buf[VCMD_BUSY_WAIT_HANDLE] == 0 &&\n       (uint32_t)flags == IOS_KVM_FEATURE_QUERY_FLAGS) {\n      const char *ram_file = getenv("IOS_KVM_RAM_FILE");\n      const char *ram_size = getenv("IOS_KVM_RAM_SIZE");\n      reply_buf[0] = IOS_KVM_FEATURE_REPLY_BASE;\n      if (ram_file && *ram_file && ram_size && strtoull(ram_size, NULL, 10))\n         reply_buf[0] |= IOS_KVM_FEATURE_UPLOAD | IOS_KVM_FEATURE_SYNC_READBACK;\n      goto ios_kvm_feature_reply;\n   }')
+edit(host / 'vtest_renderer.c',
+     '   hdr_buf[VTEST_CMD_LEN] = 1;\n   hdr_buf[VTEST_CMD_ID] = VCMD_RESOURCE_BUSY_WAIT;\n   reply_buf[0] = busy ? 1 : 0;',
+     '   reply_buf[0] = busy ? 1 : 0;\nios_kvm_feature_reply:\n   hdr_buf[VTEST_CMD_LEN] = 1;\n   hdr_buf[VTEST_CMD_ID] = VCMD_RESOURCE_BUSY_WAIT;')
+edit(mesa / 'virgl_vtest_socket.c', 'int virgl_vtest_connect(struct virgl_vtest_winsys *vws)',
+     'static int ios_kvm_query_features(struct virgl_vtest_winsys *vws)\n{\n   uint32_t header[2] = {VCMD_BUSY_WAIT_SIZE, VCMD_RESOURCE_BUSY_WAIT};\n   uint32_t request[2] = {0, IOS_KVM_FEATURE_QUERY_FLAGS};\n   uint32_t reply;\n   if (virgl_block_write(vws->sock_fd, header, sizeof(header)) != sizeof(header) ||\n       virgl_block_write(vws->sock_fd, request, sizeof(request)) != sizeof(request) ||\n       virgl_block_read(vws->sock_fd, header, sizeof(header)) != sizeof(header) ||\n       header[0] != 1 || header[1] != VCMD_RESOURCE_BUSY_WAIT ||\n       virgl_block_read(vws->sock_fd, &reply, sizeof(reply)) != sizeof(reply))\n      return -1;\n   vws->ios_kvm_features = ios_kvm_decode_features(reply);\n   fprintf(stderr, "ios-kvm host features: shared uploads %s\\n",\n           vws->ios_kvm_features & IOS_KVM_FEATURE_UPLOAD ? "supported" : "unavailable");\n   return 0;\n}\n\nint virgl_vtest_connect(struct virgl_vtest_winsys *vws)')
+edit(mesa / 'virgl_vtest_socket.c',
+     '   vws->protocol_version = virgl_vtest_negotiate_version(vws, 0);',
+     '   vws->protocol_version = virgl_vtest_negotiate_version(vws, 0);\n   if (ios_kvm_query_features(vws)) {\n      close(sock);\n      ios_kvm_reset_frames(sock);\n      vws->sock_fd = -1;\n      return -1;\n   }')
+
+# Upgrade previously prepared negotiation code without duplicating functions.
+path = host / 'vtest_renderer.c'
+path.write_text(path.read_text().replace('reply_buf[0] |= IOS_KVM_FEATURE_UPLOAD;',
+    'reply_buf[0] |= IOS_KVM_FEATURE_UPLOAD | IOS_KVM_FEATURE_SYNC_READBACK;'))
+edit(mesa / 'virgl_vtest_socket.c',
+     '   vws->ios_kvm_features = ios_kvm_decode_features(reply);',
+     '   vws->ios_kvm_features = ios_kvm_decode_features(reply);\n'
+     '   vws->base.ios_kvm_readback_sync = !!(vws->ios_kvm_features & IOS_KVM_FEATURE_SYNC_READBACK);')

@@ -9,6 +9,8 @@ mesa = root / '.local/mesa-25.0.7/src'
 def edit(relative, old, new):
     path = mesa / relative
     text = path.read_text()
+    if new.startswith('#include "virgl_resource.h"') and new.split('\n')[1] in text:
+        return
     if new.startswith('static int\nvirgl_vtest_direct_readback(') and 'static int\nvirgl_vtest_direct_readback(' in text:
         return
     if new.startswith('static int\nvirgl_direct_readback(') and 'static int\nvirgl_direct_readback(' in text:
@@ -177,11 +179,19 @@ edit(path, '''      if (_mesa_format_matches_format_and_type(rb->Format, format,
                                                type, pack->SwapBytes, NULL)) {''')
 print('Prepared opt-in direct caller-buffer readback')
 
-# Experiment only: synchronous readback follows the flush on the same vtest
-# connection. Test whether the additional resource-busy round trip is redundant.
+# Synchronous completion is negotiated per connection. Explicit controls remain
+# available for comparisons with the preliminary resource-busy round trip.
 from readback_wait_policy import patch as patch_readback_wait
 path = mesa / 'gallium/drivers/virgl/virgl_resource.c'
 path.write_text(patch_readback_wait(path.read_text()))
 
 edit('gallium/drivers/virgl/virgl_resource.c',
      '#include "virgl_resource.h"', '#include "virgl_resource.h"\n#include <unistd.h>')
+
+# Per-context negotiated completion property; no global environment mutation.
+import shutil
+shutil.copyfile(root / 'tools/readback-wait-policy.h', mesa / 'gallium/drivers/virgl/readback-wait-policy.h')
+edit('gallium/drivers/virgl/virgl_resource.c', '#include "virgl_resource.h"',
+     '#include "virgl_resource.h"\n#include "readback-wait-policy.h"')
+edit('gallium/drivers/virgl/virgl_winsys.h', '   unsigned pci_id;',
+     '   bool ios_kvm_readback_sync;\n   unsigned pci_id;')

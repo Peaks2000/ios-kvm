@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 import unittest
-from readback_wait_policy import BASE, PREVIOUS, CURRENT, patch
+from readback_wait_policy import BASE, PREVIOUS, MARKER_PREVIOUS, CURRENT, patch
 
 class WaitPolicyTests(unittest.TestCase):
     def test_fresh_and_existing_experiment(self):
-        for old in (BASE, PREVIOUS, CURRENT):
+        for old in (BASE, PREVIOUS, MARKER_PREVIOUS, CURRENT):
             text = 'before\n' + old + '(args);\nafter'
             expected = 'before\n' + CURRENT + '(args);\nafter'
             self.assertEqual(patch(text), expected)

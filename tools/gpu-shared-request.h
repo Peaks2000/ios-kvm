@@ -7,6 +7,26 @@
 
 #define IOS_KVM_SHARED_UPLOAD_MIN_BYTES (256u << 10)
 
+/* Private feature query through handle-zero RESOURCE_BUSY_WAIT. Legacy
+ * servers ignore the flag and return only 0/1, never this versioned tag. */
+#define IOS_KVM_FEATURE_QUERY_FLAGS UINT32_C(0x494b0000)
+#define IOS_KVM_FEATURE_REPLY_BASE UINT32_C(0x494b0100)
+#define IOS_KVM_FEATURE_UPLOAD UINT32_C(1)
+#define IOS_KVM_FEATURE_SYNC_READBACK UINT32_C(2)
+#define IOS_KVM_FEATURE_KNOWN (IOS_KVM_FEATURE_UPLOAD | IOS_KVM_FEATURE_SYNC_READBACK)
+
+static inline uint32_t ios_kvm_decode_features(uint32_t reply)
+{
+   return (reply & UINT32_C(0xffffff00)) == IOS_KVM_FEATURE_REPLY_BASE
+      ? reply & IOS_KVM_FEATURE_KNOWN : 0;
+}
+
+static inline int ios_kvm_upload_policy(uint32_t features, const char *mode)
+{
+   if (!(features & IOS_KVM_FEATURE_UPLOAD)) return 0;
+   return !mode || !strcmp(mode, "auto") || !strcmp(mode, "1");
+}
+
 struct ios_kvm_shared_request {
    uint32_t words[14]; /* vtest header followed by twelve command arguments */
    uint64_t segments[8192];
