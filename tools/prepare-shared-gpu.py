@@ -26,6 +26,7 @@ def edit(path, old, new):
     path.write_text(text.replace(old, new, 1))
 
 shutil.copyfile(root / 'tools/gpu-shared-guest.h', mesa / 'gpu-shared-guest.h')
+shutil.copyfile(root / 'tools/gpu-async-policy.h', mesa / 'gpu-async-policy.h')
 shutil.copyfile(root / 'tools/gpu-shared-request.h', mesa / 'gpu-shared-request.h')
 shutil.copyfile(root / 'tools/gpu-shared-host.h', host / 'gpu-shared-host.h')
 shutil.copyfile(root / 'tools/gpu-ram-map.h', host / 'gpu-ram-map.h')
@@ -132,3 +133,15 @@ edit(mesa / 'virgl_vtest_socket.c',
      '   vws->ios_kvm_features = ios_kvm_decode_features(reply);',
      '   vws->ios_kvm_features = ios_kvm_decode_features(reply);\n'
      '   vws->base.ios_kvm_readback_sync = !!(vws->ios_kvm_features & IOS_KVM_FEATURE_SYNC_READBACK);')
+
+# Asynchronous replies use only a kernel-owned completion cell, never socket bytes.
+edit(host / 'vtest.h', 'int vtest_ios_kvm_shared_put(uint32_t length_dw);',
+     'int vtest_ios_kvm_shared_put(uint32_t length_dw);\nint vtest_ios_kvm_shared_get_async(uint32_t length_dw);')
+edit(host / 'vtest_server.c',
+     '   [65] = {"IOS_KVM_SHARED_PUT", vtest_ios_kvm_shared_put, true},',
+     '   [65] = {"IOS_KVM_SHARED_PUT", vtest_ios_kvm_shared_put, true},\n'
+     '   [66] = {"IOS_KVM_SHARED_GET_ASYNC", vtest_ios_kvm_shared_get_async, true},')
+path = host / 'vtest_renderer.c'
+path.write_text(path.read_text().replace(
+    'reply_buf[0] |= IOS_KVM_FEATURE_UPLOAD | IOS_KVM_FEATURE_SYNC_READBACK;',
+    'reply_buf[0] |= IOS_KVM_FEATURE_UPLOAD | IOS_KVM_FEATURE_SYNC_READBACK | IOS_KVM_FEATURE_ASYNC_READBACK;'))

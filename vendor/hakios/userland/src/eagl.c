@@ -365,6 +365,7 @@ static int blit_targets = 1;
  * here in any case; glwait=0: nowhere, to see what the waiting costs (and frames half drawn).
  */
 static int wait_for_frames = 1;
+static bool asynchronous_surface_reads;
 static int sync_frames = 1;             /* boot-arg glsync=0 (a test): a frame's end does not push what Mesa holds back (frame_end()) */
 /*
  * EXT_shader_framebuffer_fetch -- a fragment shader reads the pixel it is about to write -- is
@@ -672,7 +673,10 @@ surface_changed(struct eagl *e, struct image *image)
 	image->looked = e->frames + 1;
 	/* Four independent XXH64 accumulators avoid a serial dependency for every word.
 	 * Unlike the original loop, this includes the final partial word too. */
+	/* A second context may sample a surface with an outstanding host readback. */
+	if (asynchronous_surface_reads && IOSurfaceLock(surface, kIOSurfaceLockReadOnly, NULL) != 0) return false;
 	uint64_t sum = surface_fingerprint(base, size);
+	if (asynchronous_surface_reads) IOSurfaceUnlock(surface, kIOSurfaceLockReadOnly, NULL);
 	if (sum == image->sum) {
 		return false;
 	}
@@ -757,7 +761,7 @@ surface_to_texture(struct eagl *e, struct image *image)
 
 /* What has been drawn into a texture, into its IOSurface, unless it is there (frame_end() waits for it). */
 static void
-target_to_surface(struct eagl *e, struct image *image)
+target_to_surface(struct eagl *e, struct image *image, bool allow_async)
 {
 	IOSurfaceRef surface = image->surface;
 	size_t row = IOSurfaceGetBytesPerRow(surface);
@@ -809,6 +813,7 @@ target_to_surface(struct eagl *e, struct image *image)
 			if (span <= IOSurfaceGetAllocSize(surface))
 				image->readback_lease = hakios_gl_readback_pin(base, (uint32_t)span);
 		}
+		hakios_gl_readback_surface(image->readback_lease, allow_async ? IOSurfaceGetID(surface) : 0);
 		void *previous_lease = image->readback_lease ? hakios_gl_readback_set(image->readback_lease) : NULL;
 		glPixelStorei(GL_PACK_ROW_LENGTH, (GLint)(row / 4));
 		glPixelStorei(GL_PACK_ALIGNMENT, 4);
@@ -1064,7 +1069,7 @@ frame_end(struct eagl *e, bool finished)
 	before = now_us();
 	for (unsigned i = 0; i < e->image_count; i++) {
 		if (e->images[i].target && e->images[i].drawn && e->images[i].mirror != 0) {
-			target_to_surface(e, &e->images[i]);    /* (the GPU's copy: before what follows sends it out) */
+			target_to_surface(e, &e->images[i], !finished);    /* (the GPU's copy: before what follows sends it out) */
 			in_place++;
 			glFlush();                              /* (also after a glFinish: the copy is new since) */
 		}
@@ -1094,7 +1099,7 @@ frame_end(struct eagl *e, bool finished)
 	for (unsigned i = 0; i < e->image_count; i++) {
 		if (e->images[i].target && e->images[i].drawn) {
 			copied += !e->images[i].shared;
-			target_to_surface(e, &e->images[i]);
+			target_to_surface(e, &e->images[i], !finished);
 			if (shown_texture != 0) {
 				show_texture(e, &e->images[i]);
 			}
@@ -4304,6 +4309,9 @@ install(void)
 			}
 		}
 	}
+
+	const char *async_mode = getenv("IOS_KVM_ASYNC_READBACK");
+	asynchronous_surface_reads = async_mode && (!strcmp(async_mode, "1") || !strcmp(async_mode, "marker"));
 
 	if (class == Nil) {
 		say("hakios-gl: this program has no EAGLContext: nothing to do\n");

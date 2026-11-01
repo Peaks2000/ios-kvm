@@ -2,11 +2,12 @@
 #include <IOKit/IOKitLib.h>
 #include <mach/mach.h>
 #include "gpu-shared-request.h"
+#include "gpu-async-policy.h"
 
 struct ios_kvm_pin {
    io_connect_t connection;
    void *destination;
-   uint32_t bytes, count;
+   uint32_t bytes, count, surface;
    size_t length;
    struct ios_kvm_shared_request request;
 };
@@ -16,6 +17,7 @@ static __thread struct ios_kvm_pin *ios_kvm_active_readback;
 __attribute__((visibility("default"))) void *ios_kvm_readback_lease_create(void *, uint32_t);
 __attribute__((visibility("default"))) void *ios_kvm_readback_lease_set(void *);
 __attribute__((visibility("default"))) void ios_kvm_readback_lease_destroy(void *);
+__attribute__((visibility("default"))) void ios_kvm_readback_lease_surface(void *, uint32_t);
 
 __attribute__((visibility("default"))) void *ios_kvm_readback_lease_create(void *destination, uint32_t bytes)
 {
@@ -44,12 +46,19 @@ __attribute__((visibility("default"))) void *ios_kvm_readback_lease_set(void *le
    return previous;
 }
 
+/* Only the EAGL IOSurface owner sets this; ordinary glReadPixels stays synchronous. */
+__attribute__((visibility("default"))) void ios_kvm_readback_lease_surface(void *lease, uint32_t surface)
+{
+   if (lease) ((struct ios_kvm_pin *)lease)->surface = surface;
+}
+
 __attribute__((visibility("default"))) void ios_kvm_readback_lease_destroy(void *lease)
 {
    struct ios_kvm_pin *pin = lease;
    if (!pin) return;
    if (ios_kvm_active_readback == pin) ios_kvm_active_readback = NULL;
-   IOServiceClose(pin->connection); /* releases the pin before its owner frees the allocation */
+   /* Tagged async surfaces have a separate kernel hold through completion. */
+   IOServiceClose(pin->connection); /* release this lease's owning-task pin */
    free(pin);
 }
 
@@ -76,6 +85,30 @@ static int ios_kvm_submit_pin_command(struct virgl_vtest_winsys *vws, uint32_t h
    return ret == sizeof(reply) && reply == 0 ? 1 : -1;
 }
 
+static int ios_kvm_submit_pin_async(struct virgl_vtest_winsys *vws, uint32_t handle,
+                                  uint32_t stride, const struct pipe_box *box, struct ios_kvm_pin *pin)
+{
+   if (!pin->surface || !(vws->ios_kvm_features & IOS_KVM_FEATURE_ASYNC_READBACK) ||
+       !ios_kvm_async_requested()) return 0;
+   uint32_t args[12] = {handle, 0, stride, 0, box->x, box->y, box->z,
+                       box->width, box->height, box->depth, pin->bytes, pin->count};
+   /* Validate the wire buffer before taking the irrevocable kernel hold. */
+   if (!ios_kvm_prepare_shared_request(&pin->request, args, pin->length)) return -1;
+   uint64_t input[2] = {pin->surface, pin->bytes}, output[2] = {0}; uint32_t count = 2;
+   kern_return_t status = IOConnectCallScalarMethod(pin->connection, 0x102, input, 2, output, &count);
+   if (status != KERN_SUCCESS) return 0; /* Old/disabled kernel or ineligible surface: sync fallback. */
+   if (count != 2 || output[1] > UINT32_MAX) return -1;
+   size_t size = ios_kvm_prepare_async_request(&pin->request, args, pin->length, output[0], output[1]);
+   /* After preparation, failure must retain the backing: a host may already be
+    * writing. No cancellation or synchronous fallback may recycle these pages. */
+   int result = size && virgl_block_write(vws->sock_fd, pin->request.words, size) == (int)size ? 1 : -1;
+   static unsigned submissions;
+   if (++submissions == 1 || result < 0)
+      fprintf(stderr, "ios-kvm async readback: surface=%u bytes=%u sequence=%u result=%d\n",
+              pin->surface, pin->bytes, (unsigned)output[1], result);
+   return result;
+}
+
 static int ios_kvm_submit_pin(struct virgl_vtest_winsys *vws, uint32_t handle,
                              uint32_t level, uint32_t stride, uint32_t layer_stride,
                              const struct pipe_box *box, struct ios_kvm_pin *pin)
@@ -96,8 +129,10 @@ int virgl_vtest_direct_get(struct virgl_vtest_winsys *vws, uint32_t handle,
    const char *enabled = getenv("IOS_KVM_SHARED");
    if (!enabled || strcmp(enabled, "1")) return 0;
    struct ios_kvm_pin *lease = ios_kvm_active_readback;
-   if (lease && lease->destination == pixels && lease->bytes == bytes)
-      return ios_kvm_submit_pin(vws, handle, 0, stride, 0, box, lease);
+   if (lease && lease->destination == pixels && lease->bytes == bytes) {
+      int asynchronous = ios_kvm_submit_pin_async(vws, handle, stride, box, lease);
+      return asynchronous ? asynchronous : ios_kvm_submit_pin(vws, handle, 0, stride, 0, box, lease);
+   }
    struct ios_kvm_pin *pin = vws->ios_kvm_direct_pin;
    if (!pin) {
       pin = calloc(1, sizeof(*pin));

@@ -53,12 +53,14 @@ static pthread_once_t readback_once = PTHREAD_ONCE_INIT;
 static void *(*readback_pin)(void *, uint32_t);
 static void (*readback_release)(void *);
 static void *(*readback_set)(void *);
+static void (*readback_surface)(void *, uint32_t);
 
 static void readback_functions(void)
 {
 	readback_pin = dlsym(RTLD_DEFAULT, "ios_kvm_readback_lease_create");
 	readback_release = dlsym(RTLD_DEFAULT, "ios_kvm_readback_lease_destroy");
 	readback_set = dlsym(RTLD_DEFAULT, "ios_kvm_readback_lease_set");
+	readback_surface = dlsym(RTLD_DEFAULT, "ios_kvm_readback_lease_surface");
 }
 
 void *hakios_gl_readback_pin(void *address, uint32_t bytes)
@@ -67,6 +69,11 @@ void *hakios_gl_readback_pin(void *address, uint32_t bytes)
 	if (!enabled || strcmp(enabled, "1")) return NULL;
 	pthread_once(&readback_once, readback_functions);
 	return readback_pin && readback_release && readback_set ? readback_pin(address, bytes) : NULL;
+}
+
+void hakios_gl_readback_surface(void *lease, uint32_t surface)
+{
+    if (lease && readback_surface) readback_surface(lease, surface);
 }
 
 void hakios_gl_readback_release(void *lease)

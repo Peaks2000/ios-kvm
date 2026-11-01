@@ -23,8 +23,15 @@ def edit(relative, old, new):
         raise SystemExit(f'Unexpected direct-readback source: {path}')
     path.write_text(text.replace(old, new, 1))
 
+header = mesa / 'gallium/include/pipe/p_context.h'
+header.write_text(header.read_text().replace(
+    "/* ios-kvm: 1 complete, 0 unsupported, -1 transport error. No caller memory retained. */",
+    "/* ios-kvm: 1 accepted, 0 unsupported, -1 error. Ordinary callers complete synchronously;\n"
+    "    * a scoped EAGL IOSurface owner may instead use kernel completion/lifetime fences. */"))
+
 edit('gallium/include/pipe/p_context.h', 'struct pipe_context {', '''struct pipe_context {
-   /* ios-kvm: 1 complete, 0 unsupported, -1 transport error. No caller memory retained. */
+   /* ios-kvm: 1 accepted, 0 unsupported, -1 error. Ordinary callers complete synchronously;
+    * a scoped EAGL IOSurface owner may instead use kernel completion/lifetime fences. */
    int (*ios_kvm_readback)(struct pipe_context *, struct pipe_resource *,
                            const struct pipe_box *, unsigned stride, void *pixels);
 ''')

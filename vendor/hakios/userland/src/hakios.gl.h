@@ -14,6 +14,7 @@ const char *hakios_gl_library(void);                           /* for the log */
 /* The caller must keep the allocation alive until release; only an explicitly bound lease is used. */
 void *hakios_gl_readback_pin(void *address, uint32_t bytes);
 void hakios_gl_readback_release(void *lease);
+void hakios_gl_readback_surface(void *lease, uint32_t surface);
 void *hakios_gl_readback_set(void *lease);
 
 /*

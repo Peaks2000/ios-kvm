@@ -25,6 +25,12 @@ int main(void)
       size_t size=ios_kvm_prepare_shared_request(&checked.request,args,count*16);
       assert(size == 56+count*16);
       assert(!memcmp(original,&checked.request,size));
+      uint32_t trailer[3] = {0x12345678, 1, 77};
+      header[0] += 3; header[1] = 66;
+      memcpy(original,header,sizeof(header));
+      memcpy(original+size,trailer,sizeof(trailer));
+      size_t async_size=ios_kvm_prepare_async_request(&checked.request,args,count*16,UINT64_C(0x112345678),77);
+      assert(async_size==size+12 && !memcmp(original,&checked.request,async_size));
       assert(checked.before == UINT64_C(0x1020304050607080));
       assert(checked.after == UINT64_C(0xfedcba9876543210));
    }
@@ -35,6 +41,10 @@ int main(void)
    assert(!ios_kvm_prepare_shared_request(&checked.request,args,17));
    args[11]=4097;
    assert(!ios_kvm_prepare_shared_request(&checked.request,args,4097*16));
+   args[11]=1;
+   assert(!ios_kvm_prepare_async_request(&checked.request,args,16,0,1));
+   assert(!ios_kvm_prepare_async_request(&checked.request,args,16,0x1001,1));
+   assert(!ios_kvm_prepare_async_request(&checked.request,args,16,0x1000,0));
    puts("shared request: old/new wire bytes identical, bounds/count checks and guards passed");
    return 0;
 }

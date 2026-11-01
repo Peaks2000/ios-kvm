@@ -12,7 +12,7 @@ out.mkdir(parents=True, exist_ok=True)
 mesa = root / '.local/mesa-25.0.7'
 library = root / '.local/mesa-virgl-build/src/gallium/targets/osmesa/libOSMesa.8.dylib'
 symbols = subprocess.check_output(['llvm-nm', '--defined-only', '--extern-only', str(library)], text=True)
-for name in ('ios_kvm_readback_lease_create', 'ios_kvm_readback_lease_set', 'ios_kvm_readback_lease_destroy'):
+for name in ('ios_kvm_readback_lease_create', 'ios_kvm_readback_lease_set', 'ios_kvm_readback_lease_destroy', 'ios_kvm_readback_lease_surface'):
     if not re.search(r'\b_' + name + r'$', symbols, re.M):
         raise SystemExit(f'Mesa is missing {name}; rebuild with tools/build-virgl.sh')
 exports = sorted(set(re.findall(r'\b_(gl\w+)$', symbols, re.M)))
@@ -47,4 +47,12 @@ subprocess.run(['clang', '-target', 'arm64-apple-ios16.0', '-isysroot',
                 '-I', str(mesa / 'include'), '-Wl,-rpath,@executable_path',
                 '-Wl,-rpath,/redwood/share/gpu-bundle',
                 str(root / 'tools/gpu-bench.c'), str(library), '-o', str(out / 'gpu-bench')], check=True)
-print(f'Built EAGL bridge with {len(exports)} exported GL entry points')
+
+subprocess.run(['clang', '-target', 'arm64-apple-ios16.0', '-isysroot',
+                str(root / '.local/sdks/iPhoneOS16.5.sdk'), '-fuse-ld=lld', '-O2',
+                '-Wall', '-Wextra', '-Werror', '-Wno-deprecated-declarations',
+                '-I', str(mesa / 'include'), '-Wl,-rpath,@executable_path',
+                '-framework', 'CoreFoundation', '-framework', 'IOSurface', '-framework', 'IOKit',
+                str(root / 'tools/gpu-async-check.c'), str(library),
+                '-o', str(out / 'gpu-async-check')], check=True)
+print(f'Built EAGL bridge with {len(exports)} exported GL entry points and GPU checks')

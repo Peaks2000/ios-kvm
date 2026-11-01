@@ -15,7 +15,7 @@ from virgl_draw import probe_draw
 
 QUERY = 0x494b0000
 REPLY = 0x494b0100
-KNOWN = 3
+KNOWN = 7
 
 
 def read(sock, size):
