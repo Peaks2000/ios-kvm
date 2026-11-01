@@ -153,3 +153,18 @@ endian = 'little'
 needs_exe_wrapper = true
 ''')
 print('Prepared iOS VirGL transport and cross-build configuration')
+
+# Complete-command coalescing preserves vtest bytes and sends each header/body
+# pair in one framed write by default. No cross-command delay.
+import re
+path = vtest / 'virgl_vtest_socket.c'
+text = path.read_text()
+pattern = re.compile(r'(?m)^( +)virgl_block_write\((vws->sock_fd), ([^;\n]+), ([^;\n]+)\);\n\1virgl_block_write\(\2, ([^;\n]+), ([^;\n]+)\);')
+def command_pair(match):
+    indent, fd, header, header_bytes, body, body_bytes = match.groups()
+    return f'{indent}ios_kvm_write_command({fd}, {header}, {header_bytes}, {body}, {body_bytes});'
+text, count = pattern.subn(command_pair, text)
+if not count and 'ios_kvm_write_command(' not in text:
+    raise SystemExit('No expected vtest command pairs to prepare')
+path.write_text(text)
+print(f'Prepared complete-command packet writes ({count} new pairs)')

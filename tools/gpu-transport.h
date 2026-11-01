@@ -16,6 +16,74 @@ static int virgl_block_write(int fd, void *data, int size)
    return ret < 0 ? ret : size;
 }
 
+/* One complete command per socket write. Outer framing is a byte stream, so
+ * combining the vtest header and body does not change the server protocol. */
+#include <pthread.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+static pthread_once_t ios_kvm_packets_once = PTHREAD_ONCE_INIT;
+static int ios_kvm_packets_mode;
+static const volatile uint32_t *ios_kvm_packets_control;
+static int ios_kvm_packets_default_enabled(const char *mode)
+{
+   return !mode || !strcmp(mode, "auto") || !strcmp(mode, "1");
+}
+static void ios_kvm_packets_init(void)
+{
+   const char *mode = getenv("IOS_KVM_COMMAND_PACKETS");
+   ios_kvm_packets_mode = ios_kvm_packets_default_enabled(mode);
+   if (mode && !strcmp(mode, "marker")) {
+      int fd = open("/var/tmp/ios-kvm-command-packets-control", O_RDONLY | O_NOFOLLOW);
+      struct stat info;
+      if (fd >= 0) {
+         if (!fstat(fd, &info) && S_ISREG(info.st_mode) && info.st_uid == geteuid() &&
+             !(info.st_mode & 077) && info.st_size == sizeof(uint32_t)) {
+            void *control = mmap(NULL, sizeof(uint32_t), PROT_READ, MAP_SHARED, fd, 0);
+            if (control != MAP_FAILED) ios_kvm_packets_control = control;
+         }
+         close(fd);
+      }
+   }
+   fprintf(stderr, "ios-kvm command packets: mode=%s active=%d marker=%s\n",
+           mode ? mode : "auto", ios_kvm_packets_mode,
+           ios_kvm_packets_control ? "mapped" : "none");
+}
+static int ios_kvm_packets_enabled(void)
+{
+   pthread_once(&ios_kvm_packets_once, ios_kvm_packets_init);
+   int enabled = ios_kvm_packets_mode || (ios_kvm_packets_control && *ios_kvm_packets_control == 1);
+   static __thread int reported = -1;
+   if (ios_kvm_packets_control && enabled != reported) {
+      fprintf(stderr, "ios-kvm command packets: active=%d\n", enabled);
+      reported = enabled;
+   }
+   return enabled;
+}
+static int ios_kvm_write_command(int fd, const void *header, int header_bytes,
+                                const void *body, int body_bytes)
+{
+   if (header_bytes <= 0 || body_bytes < 0 || !header || (body_bytes && !body)) return -EINVAL;
+   if (header_bytes > (64 << 20) || body_bytes > (64 << 20)) return -EMSGSIZE;
+   if (!ios_kvm_packets_enabled() || (uint64_t)header_bytes + body_bytes > (4u << 20)) {
+      int ret = virgl_block_write(fd, (void *)header, header_bytes);
+      if (ret < 0) return ret;
+      ret = virgl_block_write(fd, (void *)body, body_bytes);
+      return ret < 0 ? ret : header_bytes + body_bytes;
+   }
+   uint32_t size = header_bytes + body_bytes;
+   uint32_t envelope[2] = {size, 0};
+   char *packet = malloc(size + sizeof(envelope));
+   if (!packet) return -ENOMEM;
+   memcpy(packet, envelope, sizeof(envelope));
+   memcpy(packet + sizeof(envelope), header, header_bytes);
+   if (body_bytes) memcpy(packet + sizeof(envelope) + header_bytes, body, body_bytes);
+   int ret = virgl_raw_write(fd, packet, size + sizeof(envelope));
+   free(packet);
+   return ret < 0 ? ret : (int)size;
+}
+
 /* The winsys serializes reads on a connection. Keep partial frames by fd. */
 static struct {
    char *bytes;
