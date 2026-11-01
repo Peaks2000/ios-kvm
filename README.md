@@ -1,6 +1,6 @@
 # ios-kvm 
 
-# (not actually based on kvm it is named after another ponect called osx-kvm)
+# (not actually based on kvm it is named after another project called osx-kvm)
 
 Phone X iOS 16.7.16 (20H392) firmware in QEMU on Linux.
 
