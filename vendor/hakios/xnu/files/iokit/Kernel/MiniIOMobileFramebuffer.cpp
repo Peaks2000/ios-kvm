@@ -1035,11 +1035,23 @@ IOMobileFramebuffer::show(const uint8_t * swap, MiniIOSurface ** surfaces)
 	bool report;
 
 	for (unsigned layer = 0; layer < SWAP_LAYERS; layer++) {
-		if (surfaces[layer] != NULL && !MiniIOSurfaceDrawn(surfaces[layer], SWAP_GPU_MS)) {
-			IOLog("MiniIOMobileFramebuffer: swap %u: the GPU is not done with surface %u after %u ms; shown as it is\n",
-			    swapWord(swap, SWAP_ID), swapWord(swap, SWAP_SURFACE(layer)), SWAP_GPU_MS);
-		}
-	}
+        if (surfaces[layer] != NULL && MiniIOSurfaceHostWait(surfaces[layer], SWAP_GPU_MS, false) != kIOReturnSuccess) {
+            /* Preserve the last panel image; never sample an incomplete host write. */
+            IOLog("MiniIOMobileFramebuffer: swap %u: host surface %u incomplete; keeping previous frame\n",
+                swapWord(swap, SWAP_ID), swapWord(swap, SWAP_SURFACE(layer)));
+            IOLockLock(fSwapLock);
+            fSwapFirst = (fSwapFirst + 1) % SWAP_QUEUE;
+            fSwapsWaiting--;
+            fStatLost++;
+            IOLockWakeup(fSwapLock, &fSwapsWaiting, true);
+            IOLockUnlock(fSwapLock);
+            return;
+        }
+        if (surfaces[layer] != NULL && !MiniIOSurfaceDrawn(surfaces[layer], SWAP_GPU_MS)) {
+            IOLog("MiniIOMobileFramebuffer: swap %u: the GPU is not done with surface %u after %u ms; shown as it is\n",
+                swapWord(swap, SWAP_ID), swapWord(swap, SWAP_SURFACE(layer)), SWAP_GPU_MS);
+        }
+    }
 	fStatWaiting += mach_absolute_time() - began;
 	began = ready = mach_absolute_time();
 	if (gOnTheBeat) {

@@ -117,6 +117,9 @@ public:
 	task_t                          clientTask;     /* whose memory it is (not held: only compared) */
 	mach_vm_address_t               clientAddress;  /* ... and where it is there */
 	uint8_t *                       kpixels;        /* where the pixel memory starts in the kernel, either way */
+	IOBufferMemoryDescriptor *      hostFenceMemory; /* kernel-only host completion page */
+	uint32_t                        hostIssued;
+	bool                            hostPending;
 	uint32_t                        drawn;          /* the GPU's last submission that names the pixels (0: none; hakios.gpu.cpp) */
 	struct minisurf_result          info;           /* addresses not filled in */
 	struct minisurf_plane           planes[MINISURF_MAX_PLANES];
@@ -128,6 +131,9 @@ public:
 	virtual bool
 	init(void) APPLE_KEXT_OVERRIDE
 	{
+		hostFenceMemory = NULL;
+		hostIssued = 0;
+		hostPending = false;
 		return OSObject::init();
 	}
 	virtual void free(void) APPLE_KEXT_OVERRIDE;
@@ -164,6 +170,7 @@ void            MiniIOSurfaceCost(uint32_t * made, uint64_t * making, uint32_t *
 /* Clear the memory that is kept of surfaces that are gone, for the next ones: when the caller has a moment. */
 void            MiniIOSurfaceClearKept(void);
 /* Wait, for so many milliseconds at most, until the GPU is done with a surface's pixels (hakios.gpu.cpp). */
+IOReturn        MiniIOSurfaceHostWait(MiniIOSurface * surface, uint64_t milliseconds, bool avoidSync);
 bool            MiniIOSurfaceDrawn(MiniIOSurface * surface, uint64_t milliseconds);
 MiniIOSurface * MiniIOSurfaceCreateSimple(uint32_t width, uint32_t height, uint32_t pixelFormat);
 void            MiniIOSurfaceDrop(MiniIOSurface * surface);

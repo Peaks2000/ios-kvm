@@ -106,6 +106,8 @@ An optional [second-chance jump-cache experiment](patches/qemu-victim-cache.md) 
 
 `QEMU_KERNEL=/absolute/path/to/candidate ./run.sh` selects an experimental kernel for one boot without replacing the working `vendor/hakios/hakios-kernel`. A missing explicit kernel is an error. The candidate must support the same boot image, disk layout and GPU interfaces; this option does not rebuild them.
 
+The kernel also has a developer-only completion API for future asynchronous surface readbacks. It requires both `gpu_shared=1` and `gpu_async=1` boot arguments and is disabled for ordinary launches. It validates the existing owning-task pin against kernel-backed IOSurface pixels, retains pending backing independently of the submitting app, and bounds retention to 128 surfaces / 64 MiB of pixels. CPU locks wait for completion; an unfinished host frame preserves the previous panel image. The GPU transport still uses synchronous readback: this API alone provides no frame-rate improvement. With a deliberately selected candidate kernel running, `python3 tools/test-surface-fences.py --output .local/surface-fences/results.json` builds and runs the completion/lifetime checks. This diagnostic currently requires an x86 Linux host, the local iOS 16.5 SDK/toolchain and private shared RAM; it checks normal/error/timeout completion, task exit and both retention limits. Pending requests from a failed diagnostic remain retained until acknowledged or the VM shuts down.
+
 Apple firmware, extracted system files and generated device identity data are local inputs and are not distributed in this repository.
 
 ## Credits
