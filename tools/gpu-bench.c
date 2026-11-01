@@ -76,6 +76,52 @@ static int run(int width, int height, int frames)
     return errors ? 1 : 0;
 }
 
+static int upload_benchmark(int width, int height, int partial, int level)
+{
+    if (width<1 || height<1 || width>4096 || height>4096) return 1;
+    const int attrs[]={OSMESA_FORMAT,OSMESA_RGBA,OSMESA_DEPTH_BITS,0,OSMESA_STENCIL_BITS,0,
+        OSMESA_PROFILE,OSMESA_ES_PROFILE,OSMESA_CONTEXT_MAJOR_VERSION,3,0};
+    OSMesaContext ctx=OSMesaCreateContextAttribs(attrs,NULL);
+    uint8_t window[16*16*4];
+    if (!ctx || !OSMesaMakeCurrent(ctx,window,GL_UNSIGNED_BYTE,16,16)) return 1;
+    setvbuf(stdout,NULL,_IOLBF,0);
+    printf("upload-bench: renderer=%s partial=%d level=%d\n",glGetString(GL_RENDERER),partial,level);
+    GLuint texture,fbo;glGenTextures(1,&texture);glBindTexture(GL_TEXTURE_2D,texture);
+    if (level) glTexStorage2D(GL_TEXTURE_2D,level+1,GL_RGBA8,width<<level,height<<level);
+    else glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,width,height,0,GL_RGBA,GL_UNSIGNED_BYTE,NULL);
+    glGenFramebuffers(1,&fbo);glBindFramebuffer(GL_FRAMEBUFFER,fbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,texture,level);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE) return 1;
+    uint8_t *pixels=malloc((size_t)width*height*4);if (!pixels) return 1;
+    unsigned errors=0;
+    int x0=partial?7:0,y0=partial?5:0,wide=width-2*x0,high=height-2*y0;
+    if (wide<1 || high<1) return 1;
+    glClearColor(0,0,0,1);glClear(GL_COLOR_BUFFER_BIT);
+    if (partial) glPixelStorei(GL_UNPACK_ROW_LENGTH,width);
+    for (int frame=0;frame<20;frame++) {
+        for (int y=0;y<height;y++) for (int x=0;x<width;x++) {
+            uint8_t *p=pixels+((size_t)y*width+x)*4;
+            p[0]=frame+1;p[1]=x&255;p[2]=y&255;p[3]=255;
+        }
+        uint64_t start=microseconds();
+        glTexSubImage2D(GL_TEXTURE_2D,level,x0,y0,wide,high,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+        glFinish();
+        uint64_t elapsed=microseconds()-start;
+        int xs[]={0,x0,width/2,x0+wide-1,width-1},ys[]={0,y0,height/2,y0+high-1,height-1};
+        for (int yi=0;yi<5;yi++) for (int xi=0;xi<5;xi++) {
+            uint8_t p[4]={0};glReadPixels(xs[xi],ys[yi],1,1,GL_RGBA,GL_UNSIGNED_BYTE,p);
+            int inside=xs[xi]>=x0 && xs[xi]<x0+wide && ys[yi]>=y0 && ys[yi]<y0+high;
+            if (p[0]!=(inside?frame+1:0) || p[1]!=(inside?((xs[xi]-x0)&255):0) ||
+                p[2]!=(inside?((ys[yi]-y0)&255):0) || p[3]!=255) errors++;
+        }
+        GLenum error=glGetError();if(error) errors++;
+        printf("upload-bench: frame=%d bytes=%zu upload_us=%llu errors=%u gl=%#x\n",
+            frame,(size_t)wide*high*4,elapsed,errors,error);
+    }
+    free(pixels);glDeleteFramebuffers(1,&fbo);glDeleteTextures(1,&texture);OSMesaDestroyContext(ctx);
+    return errors?1:0;
+}
+
 static int flip_benchmark(void)
 {
     const int attrs[] = {OSMESA_FORMAT, OSMESA_RGBA, OSMESA_DEPTH_BITS, 0, OSMESA_STENCIL_BITS, 0,
@@ -150,6 +196,10 @@ static int flip_benchmark(void)
 
 int main(int argc, char **argv)
 {
+    if (argc > 1 && !strcmp(argv[1], "upload"))
+        return upload_benchmark(argc>3?atoi(argv[2]):750,argc>3?atoi(argv[3]):1624,0,0);
+    if (argc > 1 && !strcmp(argv[1], "upload-subrect")) return upload_benchmark(257,129,1,0);
+    if (argc > 1 && !strcmp(argv[1], "upload-mip")) return upload_benchmark(128,128,0,1);
     if (argc > 1 && !strcmp(argv[1], "lease-cycles")) {
         for (unsigned i=0;i<10;i++) if (run(256,128,4)) return 1;
         puts("gpu-bench: 10 leased-buffer/context create/render/destroy cycles passed");

@@ -38,6 +38,7 @@ prototype = '''int virgl_vtest_shared_get(struct virgl_vtest_winsys *vws,
 '''
 header = mesa / 'virgl_vtest_winsys.h'
 text = re.sub(r'int virgl_vtest_shared_get\([^;]+;\n*', '', header.read_text())
+text = re.sub(r'int virgl_vtest_shared_put\([^;]+;\n*', '', text)
 text = re.sub(r'void virgl_vtest_shared_release\([^;]+;\n*', '', text)
 text = text.replace('int virgl_vtest_connect(', prototype +
                     'void virgl_vtest_shared_release(struct virgl_hw_res *resource);\n\nint virgl_vtest_connect(', 1)
@@ -70,3 +71,22 @@ edit(host / 'vtest_server.c', '   HANDLER(GET_CAPS,                send_caps,   
      '   HANDLER(GET_CAPS,                send_caps,             false),')
 print('Prepared experimental shared-RAM GPU transfer')
 subprocess.run(['python3', str(root / 'tools/prepare-direct-readback.py')], check=True)
+
+# Uploads are opt-in and use a separate command on an updated host renderer.
+edit(mesa / 'virgl_vtest_winsys.h',
+     'void virgl_vtest_shared_release(struct virgl_hw_res *resource);',
+     'int virgl_vtest_shared_put(struct virgl_vtest_winsys *vws,\n                          uint32_t handle, uint32_t level, uint32_t stride,\n                          uint32_t layer_stride, const struct pipe_box *box,\n                          uint32_t bytes, void *source, struct virgl_hw_res *resource);\nvoid virgl_vtest_shared_release(struct virgl_hw_res *resource);')
+edit(mesa / 'virgl_vtest_winsys.c',
+     '   virgl_vtest_send_transfer_put(vtws, res->res_handle,',
+     '   const char *upload = getenv("IOS_KVM_SHARED_UPLOAD");\n   static unsigned upload_checks;\n   if (upload && !strcmp(upload, "1") && size >= 65536 && upload_checks++ < 3)\n      fprintf(stderr, "ios-kvm upload check: format=%u block=%u bytes=%u stride=%u width=%d height=%d protocol=%u\\n",\n              res->format, util_format_get_blocksize(res->format), size, valid_stride,\n              box->width, box->height, vtws->protocol_version);\n   if (upload && !strcmp(upload, "1") && size >= IOS_KVM_SHARED_UPLOAD_MIN_BYTES && vtws->protocol_version == 0 && box->depth == 1 &&\n       valid_stride == util_format_get_stride(res->format, box->width) &&\n       util_format_get_blocksize(res->format) == 4 &&\n       util_format_get_blockwidth(res->format) == 1 && util_format_get_blockheight(res->format) == 1) {\n      ptr = virgl_vtest_resource_map(vws, res);\n      int shared = virgl_vtest_shared_put(vtws, res->res_handle, level, stride,\n                                         layer_stride, box, size, ptr + buf_offset, res);\n      virgl_vtest_resource_unmap(vws, res);\n      if (shared != 0)\n         return shared > 0 ? 0 : -1;\n   }\n   virgl_vtest_send_transfer_put(vtws, res->res_handle,')
+edit(host / 'vtest.h', 'int vtest_ios_kvm_shared_get(uint32_t length_dw);',
+     'int vtest_ios_kvm_shared_get(uint32_t length_dw);\nint vtest_ios_kvm_shared_put(uint32_t length_dw);')
+edit(host / 'vtest_server.c',
+     '   [64] = {"IOS_KVM_SHARED_GET", vtest_ios_kvm_shared_get, true},',
+     '   [64] = {"IOS_KVM_SHARED_GET", vtest_ios_kvm_shared_get, true},\n'
+     '   [65] = {"IOS_KVM_SHARED_PUT", vtest_ios_kvm_shared_put, true},')
+edit(mesa / 'virgl_vtest_socket.c', '   address.sin_port = htons(6712);',
+     '   unsigned long port = 6712;\n   const char *port_text = getenv("IOS_KVM_VTEST_PORT");\n   if (port_text) {\n      char *end;\n      port = strtoul(port_text, &end, 10);\n      if (end == port_text || *end || !port || port > 65535) { errno = EINVAL; return -1; }\n   }\n   address.sin_port = htons((uint16_t)port);')
+
+edit(mesa / 'virgl_vtest_winsys.c', '#include "virgl_vtest_winsys.h"',
+     '#include "virgl_vtest_winsys.h"\n#include "gpu-shared-request.h"')

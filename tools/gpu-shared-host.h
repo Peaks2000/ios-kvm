@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include "gpu-ram-map.h"
 
-int vtest_ios_kvm_shared_get(uint32_t length_dw)
+static int vtest_ios_kvm_shared_transfer(uint32_t length_dw, bool upload)
 {
    struct vtest_context *ctx = vtest_get_current_context();
    struct vtest_transfer_args args;
@@ -54,15 +54,31 @@ int vtest_ios_kvm_shared_get(uint32_t length_dw)
          total += length;
       }
       struct vtest_resource *res = util_hash_table_get(ctx->resource_table, intptr_to_pointer(args.handle));
-      if (valid && total == bytes && res)
-         status = virgl_renderer_transfer_read_iov(res->res_id, ctx->ctx_id,
-            args.level, args.stride, args.layer_stride, &args.box, args.offset, iov, count);
+      if (valid && total == bytes && res) {
+         if (upload)
+            status = virgl_renderer_transfer_write_iov(res->res_id, ctx->ctx_id,
+               args.level, args.stride, args.layer_stride, &args.box, args.offset, iov, count);
+         else
+            status = virgl_renderer_transfer_read_iov(res->res_id, ctx->ctx_id,
+               args.level, args.stride, args.layer_stride, &args.box, args.offset, iov, count);
+      }
       ios_kvm_ram_unmap(&mapping);
    }
    free(segments); free(iov);
-   static unsigned transfers;
-   if (++transfers == 1 || transfers % 120 == 0 || status)
-      fprintf(stderr, "ios-kvm shared: transfer %u, %u bytes, %u segments, status %d\n",
-              transfers, bytes, count, status);
+   static unsigned uploads, readbacks;
+   unsigned sequence = upload ? ++uploads : ++readbacks;
+   if (sequence == 1 || sequence % 120 == 0 || status)
+      fprintf(stderr, "ios-kvm shared: %s transfer %u, %u bytes, %u segments, status %d\n",
+              upload ? "upload" : "readback", sequence, bytes, count, status);
    return vtest_block_write(ctx->out_fd, &status, sizeof(status)) > 0 ? 0 : -EIO;
+}
+
+int vtest_ios_kvm_shared_get(uint32_t length_dw)
+{
+   return vtest_ios_kvm_shared_transfer(length_dw, false);
+}
+
+int vtest_ios_kvm_shared_put(uint32_t length_dw)
+{
+   return vtest_ios_kvm_shared_transfer(length_dw, true);
 }

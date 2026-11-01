@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <string.h>
 
+#define IOS_KVM_SHARED_UPLOAD_MIN_BYTES (256u << 10)
+
 struct ios_kvm_shared_request {
    uint32_t words[14]; /* vtest header followed by twelve command arguments */
    uint64_t segments[8192];

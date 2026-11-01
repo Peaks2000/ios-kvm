@@ -18,7 +18,7 @@ with tarfile.open(archive, 'w') as tar:
         (root / '.local/mesa-virgl-build/src/gallium/targets/osmesa/libOSMesa.8.dylib', 'libOSMesa.8.dylib'),
     ]:
         tar.add(path.resolve(), arcname=name, recursive=False)
-    for name in ('libhakios.gl.dylib', 'libios-kvm-gpu.dylib'):
+    for name in ('libhakios.gl.dylib', 'libios-kvm-gpu.dylib', 'gpu-bench'):
         path = root / '.local/support' / name
         if path.exists():
             tar.add(path, arcname=name, recursive=False)
