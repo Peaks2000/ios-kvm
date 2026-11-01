@@ -20,6 +20,12 @@ OpenGL in the viewer accelerates host-side display scaling, independently of the
 
 `bash tools/ssh.sh` connects to root SSH through `127.0.0.1:2222` using a dedicated local key. Password authentication depends on your local SSH configuration and account database. When enabled, diagnostic VNC listens at `127.0.0.1:5901`. The writable data disk retains files and packages across VM restarts; a local first-boot snapshot is imported only once when present. Installed tweak loading and repeated Sileo GUI installations still need verification.
 
+## Install an IPA
+
+Run `./install-ipa.sh` to open **ios-kvm · Install IPA**, then drag one `.ipa` from your file manager onto that window, or click **Choose IPA…**. The running VM must have working SSH and TrollStore Lite installed. The window shows upload/install progress and errors; no VM restart is needed.
+
+For terminal use: `./install-ipa.sh /path/to/your-app.ipa`. Installation uses the guest's existing [TrollStore Lite](https://github.com/opa334/TrollStore) helper, and temporary guest uploads are removed afterward. IPA files and their contents stay out of the repository. The window requires Python 3, PyGObject and GTK 3 (Fedora: `python3-gobject gtk3`).
+
 ## Tested host
 
 Only tested on Fedora Linux with a Ryzen 7 7435HS, 16 GiB RAM and RTX 4060. AMD and Intel hardware validation remains pending.

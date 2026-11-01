@@ -33,3 +33,4 @@ vendor/hakios/ssh/
 .local/
 logs/
 firmware/
+*.[iI][pP][aA]
