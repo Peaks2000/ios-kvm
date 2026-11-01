@@ -91,6 +91,44 @@ for label, commands, capacity, seq, declared, reply in cases:
     healthy()
     print('Rejected and recovered:', label)
 
+# Live fence IDs are context-owned, and output bounds precede driver writes.
+with authenticated() as owner, authenticated() as foreign:
+    batch(owner, record(0x10012, struct.pack('<QQ', 0x9117, 0)), 8)
+    assert struct.unpack('<IIII', read(owner, 16)) == (magic, 1, 0, 8)
+    fence, = struct.unpack('<Q', read(owner, 8))
+    assert fence
+    batch(foreign, record(0x10016, struct.pack('<Q', fence)), 1)
+    assert struct.unpack('<IIII', read(foreign, 16)) == (magic, 1, 0, 1)
+    assert read(foreign, 1) == b'\0'
+    batch(foreign, record(0x10014, struct.pack('<QQQ', fence, 0, 0)), 4, sequence=2)
+    assert struct.unpack('<IIII', read(foreign, 16))[2] != 0
+    assert closed(foreign)
+    batch(owner, record(0x10017, struct.pack('<QQQ', fence, 0x9114, 1)), 1, sequence=2)
+    assert struct.unpack('<IIII', read(owner, 16))[2] != 0
+    assert closed(owner)
+healthy()
+print('Rejected foreign sync and undersized sync output; recovered after owner exit')
+
+# Enforce the per-context live-fence budget and clean up on owner disappearance.
+with authenticated() as s:
+    previous = 0
+    for sequence in range(1, 1025):
+        batch(s, record(0x10012, struct.pack('<QQ', 0x9117, 0)), 8, sequence=sequence)
+        assert struct.unpack('<IIII', read(s, 16)) == (magic, sequence, 0, 8)
+        token_value, = struct.unpack('<Q', read(s, 8))
+        assert token_value > previous
+        previous = token_value
+    batch(s, record(0x10012, struct.pack('<QQ', 0x9117, 0)), 8, sequence=1025)
+    assert struct.unpack('<IIII', read(s, 16))[2] != 0
+    assert closed(s)
+with authenticated() as s:
+    batch(s, record(0x10012, struct.pack('<QQ', 0x9117, 0)), 8)
+    assert struct.unpack('<IIII', read(s, 16)) == (magic, 1, 0, 8)
+    token_value, = struct.unpack('<Q', read(s, 8))
+    assert token_value > previous
+healthy()
+print('Live-fence limit and owner-exit cleanup passed')
+
 # An owner disappearing midway through a blob must release its connection/context.
 for _ in range(24):
     with authenticated() as s:

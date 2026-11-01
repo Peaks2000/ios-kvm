@@ -30,11 +30,14 @@ static int ng_output(void *output, size_t capacity, size_t *used,
   return 0;
 }
 #include "server-pointers.h"
+#include "server-sync.h"
 static int ng_dispatch(uint32_t opcode, const uint8_t *data, size_t size,
                        void *output, size_t capacity, size_t *used) {
   switch (opcode) {
 #include "server-scalars.h"
   default:
+    if (opcode >= NG_FENCE_SYNC)
+      return ng_sync_dispatch(opcode, data, size, output, capacity, used);
     return ng_pointer(opcode, data, size, output, capacity, used);
   }
 }
@@ -104,6 +107,10 @@ static void *ng_serve(void *argument) {
       }
       if (ng_dispatch(record.opcode, commands + at, record.bytes, output,
                       batch.reply_capacity, &used)) {
+        fprintf(
+            stderr,
+            "native GLES: rejected opcode %#x, input %u, output capacity %u\n",
+            record.opcode, record.bytes, batch.reply_capacity);
         status = -1;
         break;
       }
@@ -123,6 +130,8 @@ static void *ng_serve(void *argument) {
 done:
   free(commands);
   free(output);
+  if (context != EGL_NO_CONTEXT && eglGetCurrentContext() == context)
+    ng_sync_cleanup();
   eglMakeCurrent(ng_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
   if (surface != EGL_NO_SURFACE)
     eglDestroySurface(ng_display, surface);

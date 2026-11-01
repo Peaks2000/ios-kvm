@@ -169,8 +169,14 @@ static void explicit_contexts(void) {
           "unsupported context version returns NULL");
   require(ios_kvm_native_gl_make_current(a), "bind A");
   context_scene(191, 0, 0);
+  GLsync a_fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+  require(a_fence != NULL, "A fence");
   require(ios_kvm_native_gl_make_current(b), "bind B");
   context_scene(0, 0, 64);
+  require(!glIsSync(a_fence), "fence belongs to its native context");
+  GLsync b_fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+  require(b_fence && b_fence != a_fence, "distinct context fence tokens");
+  glDeleteSync(b_fence);
   for (unsigned i = 0; i < 12; i++) {
     require(ios_kvm_native_gl_make_current(a), "switch to A");
     context_pixel(191, 0, 0);
@@ -335,6 +341,31 @@ int main(void) {
     glTexSubImage2D(GL_TEXTURE_2D, 0, 7, 5, 11, 9, upload_format,
                     GL_UNSIGNED_BYTE, patch);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, NULL);
+    GLsync fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    require(fence && glIsSync(fence) && !glIsSync(NULL),
+            "native fence identity");
+    GLenum wait = glClientWaitSync(fence, 0, 0);
+    require(wait == GL_TIMEOUT_EXPIRED || wait == GL_ALREADY_SIGNALED ||
+                wait == GL_CONDITION_SATISFIED,
+            "nonblocking native fence wait");
+    glWaitSync(fence, 0, GL_TIMEOUT_IGNORED);
+    wait = glClientWaitSync(fence, GL_SYNC_FLUSH_COMMANDS_BIT, 1000000000);
+    require(wait == GL_ALREADY_SIGNALED || wait == GL_CONDITION_SATISFIED,
+            "native GPU fence completion");
+    GLint sync_values[2] = {-1, 0x12345678};
+    GLsizei sync_length = -1;
+    glGetSynciv(fence, GL_SYNC_STATUS, 1, &sync_length, sync_values);
+    require(sync_length == 1 && sync_values[0] == GL_SIGNALED &&
+                sync_values[1] == 0x12345678,
+            "sync status and bounds");
+    sync_length = -1;
+    glGetSynciv(fence, GL_SYNC_STATUS, 0, &sync_length, sync_values);
+    require(sync_length == 0 && sync_values[1] == 0x12345678,
+            "zero-capacity sync query");
+    glDeleteSync(fence);
+    require(!glIsSync(fence), "deleted fence token is stale");
+    glDeleteSync(NULL);
+
     glPixelStorei(GL_PACK_ALIGNMENT, 8);
     glPixelStorei(GL_PACK_ROW_LENGTH, OUTPUT_ROW);
     glPixelStorei(GL_PACK_SKIP_ROWS, 1);

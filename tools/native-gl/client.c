@@ -225,6 +225,7 @@ static void ng_call(uint32_t op, const void *data, size_t size, void *output,
 }
 #include "client-pointers.h"
 #include "client-scalars.h"
+#include "client-sync.h"
 /* Diagnostic implicit contexts are released; explicit contexts remain
  * owner-managed. */
 void ios_kvm_native_gl_disconnect(void) {

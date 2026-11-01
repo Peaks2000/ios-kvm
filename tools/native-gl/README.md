@@ -1,7 +1,7 @@
 # Native GLES backend research
 
 This backend moves GLES processing onto the host CPU/GPU. The guest library
-exports 167 GLES entry points without linking guest Mesa. It is experimental
+exports 173 GLES entry points without linking guest Mesa. It is experimental
 and is **not selected by `run.sh` or installed into EAGL**.
 
 Build with `python3 tools/build-native-gl.py`. The developer build requires the
@@ -40,6 +40,13 @@ EGL/GLES interfaces alone is not proof that those devices pass.
   row length, skipped rows/pixels and untouched output padding. BGRA is converted
   on the host, so driver-specific BGRA extensions are not required for transfers.
 - Scalar/vector integer queries and stable context-lifetime GL strings.
+- Native fence creation/deletion, CPU/GPU waits, identity and status queries.
+  Guest handles are monotonic numeric IDs scoped to their native context, never
+  host pointers. Up to1024 live fences per context; context teardown deletes
+  remaining objects. Unknown/stale wait/delete handles currently reject the
+  transport; complete invalid-argument GL error behavior remains future work.
+  Zero-capacity sync queries preserve guest output storage even on host drivers
+  that write one value for a native zero-capacity request.
 - Explicit GLES3 context objects own their native connection. Multiple contexts
   can switch on one thread, or migrate after release. A context cannot be current
   on two threads or destroyed while current elsewhere. Pending calls are sent
@@ -47,7 +54,8 @@ EGL/GLES interfaces alone is not proof that those devices pass.
   Resource-sharing groups and GLES2 contexts are not yet implemented.
 
 The guest diagnostic creates its own shaders, textures, vertex/index buffers and
-framebuffer. It validates every active pixel/channel (tolerance 1) and exact
+framebuffer. Each rendered frame also checks real native fence completion and
+bounded status queries before checking its pixels. It validates every active pixel/channel (tolerance 1) and exact
 untouched padding across 20 changing frames, alternating RGBA/BGRA independently.
 It also checks shader errors/log bounds, GL error ordering, cached strings and
 independent thread contexts, plus full750x1624 RGBA and1125x2436 BGRA
@@ -78,7 +86,7 @@ audit object only, never stub implementations. No adapter is installed in the VM
 
 Other missing pieces include complete required API coverage and runtime EAGL
 integration, share groups/GLES2 contexts, client vertex/index arrays, PBOs,
-mapped buffers, sync objects/callbacks, additional pixel types/formats, extension
+mapped buffers, callbacks, additional pixel types/formats, extension
 semantics and full invalid-argument behavior. Currently unsupported calls or
 transport failures abort the diagnostic client; this is not suitable for the
 window server. Pixel dimensions are bounded to 4096 and packets/replies to
@@ -88,3 +96,7 @@ and real desktop/app behavior are verified.
 Generated prototypes derive from Khronos's OpenGL registry (provided by Mesa);
 transport, marshalling, tests and native execution code are part of ios-kvm.
 Host EGL/GLES implementations are supplied by the host's graphics drivers.
+
+Sync-query output handling follows [GLES3.1 section4.1.3](https://registry.khronos.org/OpenGL/specs/es/3.1/es_spec_3.1.pdf):
+only the requested number of values is copied to the guest. The host queries its
+own one-integer storage first, preserving native status and error behavior.
