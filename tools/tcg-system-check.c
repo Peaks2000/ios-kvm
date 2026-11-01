@@ -4,6 +4,7 @@
 static uint64_t l1[512] __attribute__((aligned(4096)));
 static uint64_t l2[512] __attribute__((aligned(4096)));
 static uint64_t l3[512] __attribute__((aligned(4096)));
+static uint64_t l3b[512] __attribute__((aligned(4096)));
 static uint32_t code[2][1024] __attribute__((aligned(4096)));
 char test_stack[16384] __attribute__((aligned(16)));
 
@@ -66,6 +67,8 @@ void check_main(void)
     l1[1]=(uint64_t)l2|3;
     l2[128]=(uint64_t)l3|3;
     l3[0]=(uint64_t)code[0]|0x703;
+    l2[136]=(uint64_t)l3b|3;
+    l3b[0]=(uint64_t)code[1]|0x703;
     uint64_t tcr=(UINT64_C(2)<<32)|(3<<12)|(1<<10)|(1<<8)|25;
     uint64_t mair=0xff, sctlr;
     __asm__ volatile("msr mair_el1, %0\nmsr tcr_el1, %1\nmsr ttbr0_el1, %2\n"
@@ -77,6 +80,8 @@ void check_main(void)
     code_fn alias=(code_fn)UINT64_C(0x50000000);
     uint64_t page=UINT64_C(0x50000000)>>12;
     check(alias()==811);
+    code_fn collision=(code_fn)UINT64_C(0x51000000);
+    for (unsigned i=0;i<1024;i++) check(alias()==811 && collision()==222);
     for (unsigned i=0;i<512;i++) {
         define(code[0],1000+i);
         check(alias()==1000+i && ((code_fn)code[1])()==222);
@@ -92,5 +97,17 @@ void check_main(void)
         check(alias()==(slot?222:1511));
     }
     hostcall(4,"TCG system: virtual-address remapping passed\n");
+    /* The two VAs collide in the 12-bit softmmu jump-cache hash. Invalidate
+     * one alias while the other remains executable and correctly mapped. */
+    uint64_t other_page=UINT64_C(0x51000000)>>12;
+    for (unsigned i=0;i<512;i++) {
+        unsigned slot=i&1;
+        l3b[0]=0;
+        __asm__ volatile("dsb ishst\ntlbi vae1is, %0\ndsb ish\nisb" : : "r"(other_page) : "memory");
+        l3b[0]=(uint64_t)code[slot]|0x703;
+        __asm__ volatile("dsb ishst\nisb" : : : "memory");
+        check(collision()==(slot?222:1511) && alias()==222);
+    }
+    hostcall(4,"TCG system: colliding-alias page invalidation passed\n");
     finish(0);
 }

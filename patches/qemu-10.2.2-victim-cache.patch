@@ -1,0 +1,93 @@
+--- a/accel/tcg/tb-jmp-cache.h
++++ b/accel/tcg/tb-jmp-cache.h
+@@ -27,7 +27,22 @@
+     struct {
+         TranslationBlock *tb;
+         vaddr pc;
+-    } array[TB_JMP_CACHE_SIZE];
++    } array[TB_JMP_CACHE_SIZE], victim[TB_JMP_CACHE_SIZE];
+ } CPUJumpCache;
+ 
++/* Keep the displaced entry as a second chance at the same page-local index.
++ * Every invalidation path must clear BOTH arrays. Valid entries are populated
++ * only by the owning CPU; other CPUs may atomically invalidate their TBs. */
++static inline void tb_jmp_cache_set(CPUJumpCache *jc, unsigned hash,
++                                  vaddr pc, TranslationBlock *tb)
++{
++    TranslationBlock *old = qatomic_read(&jc->array[hash].tb);
++    if (old) {
++        jc->victim[hash].pc = jc->array[hash].pc;
++        qatomic_set(&jc->victim[hash].tb, old);
++    }
++    jc->array[hash].pc = pc;
++    qatomic_set(&jc->array[hash].tb, tb);
++}
++
+ #endif /* ACCEL_TCG_TB_JMP_CACHE_H */
+--- a/accel/tcg/cpu-exec.c
++++ b/accel/tcg/cpu-exec.c
+@@ -245,13 +245,19 @@
+         goto hit;
+     }
+ 
++    tb = qatomic_read(&jc->victim[hash].tb);
++    if (tb && jc->victim[hash].pc == s.pc &&
++        tb->cs_base == s.cs_base && tb->flags == s.flags &&
++        tb_cflags(tb) == s.cflags) {
++        goto hit;
++    }
++
+     tb = tb_htable_lookup(cpu, s);
+     if (tb == NULL) {
+         return NULL;
+     }
+ 
+-    jc->array[hash].pc = s.pc;
+-    qatomic_set(&jc->array[hash].tb, tb);
++    tb_jmp_cache_set(jc, hash, s.pc, tb);
+ 
+ hit:
+     /*
+@@ -976,8 +982,7 @@
+                  */
+                 h = tb_jmp_cache_hash_func(s.pc);
+                 jc = cpu->tb_jmp_cache;
+-                jc->array[h].pc = s.pc;
+-                qatomic_set(&jc->array[h].tb, tb);
++                tb_jmp_cache_set(jc, h, s.pc, tb);
+             }
+ 
+ #ifndef CONFIG_USER_ONLY
+--- a/accel/tcg/translate-all.c
++++ b/accel/tcg/translate-all.c
+@@ -636,5 +636,6 @@
+ 
+     for (int i = 0; i < TB_JMP_CACHE_SIZE; i++) {
+         qatomic_set(&jc->array[i].tb, NULL);
+-    }
+-}
++        qatomic_set(&jc->victim[i].tb, NULL);
++    }
++}
+--- a/accel/tcg/cputlb.c
++++ b/accel/tcg/cputlb.c
+@@ -158,6 +158,7 @@
+     i0 = tb_jmp_cache_hash_page(page_addr);
+     for (i = 0; i < TB_JMP_PAGE_SIZE; i++) {
+         qatomic_set(&jc->array[i0 + i].tb, NULL);
++        qatomic_set(&jc->victim[i0 + i].tb, NULL);
+     }
+ }
+ 
+--- a/accel/tcg/tb-maint.c
++++ b/accel/tcg/tb-maint.c
+@@ -909,6 +909,9 @@
+             if (qatomic_read(&jc->array[h].tb) == tb) {
+                 qatomic_set(&jc->array[h].tb, NULL);
+             }
++            if (qatomic_read(&jc->victim[h].tb) == tb) {
++                qatomic_set(&jc->victim[h].tb, NULL);
++            }
+         }
+     }
+ }

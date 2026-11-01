@@ -92,6 +92,8 @@ On an ARM64 Linux host, `QEMU_ACCEL=kvm ./run.sh` explicitly requests hardware C
 
 For actual guest CPU comparisons, `python3 tools/build-guest-tcg-bench.py` builds an iOS benchmark and native checksum reference. With a managed VM running, `python3 tools/bench-live-tcg.py --label candidate --output .local/ios-cpu-candidate.json` deploys the benchmark into temporary guest storage and records timings, actual QEMU binary/hash, session age and host load. It checks all guest results against the native reference and excludes the first two of eight samples. Allow the same startup settling time for each build; startup widget work can otherwise dominate the measurements. These CPU workloads do not measure UI FPS.
 
+An optional [second-chance jump-cache experiment](patches/qemu-victim-cache.md) checks a displaced entry before QEMU's global translation lookup. It is a separate manual QEMU patch, with explicit code-modification and remapping checks. Calculation results are mixed, and a matched iOS Settings comparison showed no UI gain. It is not selected by the launcher.
+
 `kern.ios_kvm_timer_floor_us` is an experimental CPU timer knob in the custom kernel. Its default is zero, preserving normal deadlines. No timing change is enabled by default, and no performance gain is claimed for it until measured.
 
 `QEMU_KERNEL=/absolute/path/to/candidate ./run.sh` selects an experimental kernel for one boot without replacing the working `vendor/hakios/hakios-kernel`. A missing explicit kernel is an error. The candidate must support the same boot image, disk layout and GPU interfaces; this option does not rebuild them.

@@ -53,8 +53,35 @@ static void define(volatile uint32_t *code, unsigned value)
     flush((void *)code,8);
 }
 
+static void collision_checks(void)
+{
+    const long first=0x4000000000L, second=first+(1L<<24);
+    const size_t page=4096;
+    /* These distinct executable pages collide in QEMU's 12-bit user cache.
+     * Alternating them populates both ways before modification/remapping. */
+    check(((first^(first>>12))&4095)==((second^(second>>12))&4095));
+    long a=syscall6(222,first,page,7,0x100022,-1,0);
+    long b=syscall6(222,second,page,7,0x100022,-1,0);
+    check(a==first && b==second);
+    generated_fn run_a=(generated_fn)a, run_b=(generated_fn)b;
+    define((void *)a,1000); define((void *)b,2000);
+    for (unsigned i=0;i<1024;i++) check(run_a()==1000 && run_b()==2000);
+    for (unsigned i=0;i<128;i++) {
+        define((void *)a,1001+i);
+        check(run_b()==2000 && run_a()==1001+i);
+    }
+    check(!syscall6(215,b,page,0,0,0,0));
+    check(syscall6(222,b,page,7,0x100022,-1,0)==b);
+    define((void *)b,3000);
+    for (unsigned i=0;i<1024;i++) check(run_a()==1128 && run_b()==3000);
+    check(!syscall6(215,a,page,0,0,0,0));
+    check(!syscall6(215,b,page,0,0,0,0));
+    say("TCG invalidation: colliding cache entries modified/remapped correctly\n");
+}
+
 void _start(void)
 {
+    collision_checks();
     const size_t page=4096, size=page*2;
     long result=syscall6(222,0,size,7,0x22,-1,0); /* mmap anonymous RWX */
     check((uint64_t)result<(uint64_t)-4095);
