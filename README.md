@@ -114,6 +114,16 @@ The kernel completion API itself requires both `gpu_shared=1` and `gpu_async=1`.
 
 Apple firmware, extracted system files and generated device identity data are local inputs and are not distributed in this repository.
 
+## CPU regression checks
+
+`python3 tools/test-tcg-timers.py --record-replay /path/to/qemu-system-aarch64`
+runs a disposable 128 MiB ARM guest with no Apple firmware or storage. It checks
+monotonic physical/virtual counters, timer expiry and rearming, and both timer
+interrupts through GICv2, under ordinary TCG, instruction counting and record/replay.
+It preserves the caller's environment for testing opt-in emulator changes.
+This is a single-vCPU correctness check; it does not establish iOS performance or
+full SMP compatibility.
+
 ## Credits
 
 - OOSEX GANG and contributors: [HakiOS](https://github.com/oosexgang/hakios-xnu-kernel), imported under `vendor/hakios` from revision `a3384e031eb1e605cf37adaefc19991f04f6274b`. Its kernel port, drivers, loader, userland support and image tools provide the current starting components. Original copyright and license files are retained; their terms apply to their respective components.
