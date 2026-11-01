@@ -1,6 +1,12 @@
 /* Disposable ARM system-mode MMU/code-invalidation check. No firmware or disks. */
 #include <stdint.h>
 
+#ifndef TCG_MODIFICATION_ROUNDS
+#define TCG_MODIFICATION_ROUNDS 512
+#endif
+_Static_assert(TCG_MODIFICATION_ROUNDS > 0 && TCG_MODIFICATION_ROUNDS <= 60000,
+               "Modified-code return values must fit MOVZ");
+
 static uint64_t l1[512] __attribute__((aligned(4096)));
 static uint64_t l2[512] __attribute__((aligned(4096)));
 static uint64_t l3[512] __attribute__((aligned(4096)));
@@ -51,7 +57,7 @@ void check_main(void)
     __asm__ volatile("mrs %0, CurrentEL" : "=r"(el));
     check(el==4); /* virt without virtualization starts this ELF in EL1. */
     define(code[0],111); define(code[1],222);
-    for (unsigned i=0;i<512;i++) {
+    for (unsigned i=0;i<TCG_MODIFICATION_ROUNDS;i++) {
         define(code[0],300+i);
         check(((code_fn)code[0])()==300+i);
         check(((code_fn)code[1])()==222);
@@ -79,10 +85,10 @@ void check_main(void)
     __asm__ volatile("msr sctlr_el1, %0\nisb" : : "r"(sctlr) : "memory");
     code_fn alias=(code_fn)UINT64_C(0x50000000);
     uint64_t page=UINT64_C(0x50000000)>>12;
-    check(alias()==811);
+    check(alias()==300+TCG_MODIFICATION_ROUNDS-1);
     code_fn collision=(code_fn)UINT64_C(0x51000000);
-    for (unsigned i=0;i<1024;i++) check(alias()==811 && collision()==222);
-    for (unsigned i=0;i<512;i++) {
+    for (unsigned i=0;i<1024;i++) check(alias()==300+TCG_MODIFICATION_ROUNDS-1 && collision()==222);
+    for (unsigned i=0;i<TCG_MODIFICATION_ROUNDS;i++) {
         define(code[0],1000+i);
         check(alias()==1000+i && ((code_fn)code[1])()==222);
     }
@@ -94,7 +100,7 @@ void check_main(void)
         __asm__ volatile("dsb ishst\ntlbi vae1is, %0\ndsb ish\nisb" : : "r"(page) : "memory");
         l3[0]=(uint64_t)code[slot]|0x703;
         __asm__ volatile("dsb ishst\nisb" : : : "memory");
-        check(alias()==(slot?222:1511));
+        check(alias()==(slot?222:1000+TCG_MODIFICATION_ROUNDS-1));
     }
     hostcall(4,"TCG system: virtual-address remapping passed\n");
     /* The two VAs collide in the 12-bit softmmu jump-cache hash. Invalidate
@@ -106,7 +112,7 @@ void check_main(void)
         __asm__ volatile("dsb ishst\ntlbi vae1is, %0\ndsb ish\nisb" : : "r"(other_page) : "memory");
         l3b[0]=(uint64_t)code[slot]|0x703;
         __asm__ volatile("dsb ishst\nisb" : : : "memory");
-        check(collision()==(slot?222:1511) && alias()==222);
+        check(collision()==(slot?222:1000+TCG_MODIFICATION_ROUNDS-1) && alias()==222);
     }
     hostcall(4,"TCG system: colliding-alias page invalidation passed\n");
     finish(0);

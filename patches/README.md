@@ -89,3 +89,10 @@ PATH="$PWD/.local/qemu-cache16-bin:$PATH" ./run.sh
 
 Ordinary `./run.sh` continues to select the installed system QEMU. Keep the
 kernel, disks, GPU renderer and guest CPU/RAM settings constant when comparing.
+
+For generated-code reclamation coverage, add `--stress` to
+`tools/test-tcg-system.py`. This performs 100,000 executable-code modifications
+with a 1 MiB translation buffer and requires a real `tb_flush` trace before
+accepting the result. The ordinary remapping and alias checks still run. This
+remains a single-vCPU correctness check; it does not establish SMP safety or a
+performance improvement.
