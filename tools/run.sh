@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 project_root=$(cd "$(dirname "$0")/.." && pwd)
+async_bootargs=$(python3 "$project_root/tools/gpu_launch.py")
+export CMDLINE="$async_bootargs"
 if [ -z "${QEMU_BINARY:-}" ] && [ -f "$project_root/.local/qemu-binary" ]; then
     IFS= read -r QEMU_BINARY < "$project_root/.local/qemu-binary" || true
 fi
