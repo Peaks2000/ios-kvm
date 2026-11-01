@@ -1,6 +1,8 @@
 # ios-kvm
 
-An independent project to run the user's iPhone X iOS 16.7.16 (20H392) firmware in QEMU on Linux.
+The name is inspired by osx-kvm. ARM guests on x86 hosts use QEMU TCG emulation, not KVM.
+
+Run your own iPhone X iOS 16.7.16 (20H392) firmware in QEMU on Linux.
 
 `ios-kvm` is the portable software project: users supply their own supported IPSW and keep their firmware, NAND and settings locally. Automatic GPU detection and setup for NVIDIA, AMD and Intel are project requirements; NVIDIA is the only hardware tested so far, and automatic setup remains unfinished. The intended separate private `PeaksiOS` repository is exclusively the owner's NAND backups and personal machine configuration, with no separate renderer implementation. It has not yet been created. Despite the project name, ARM guests on x86 hosts currently use QEMU TCG CPU emulation, not KVM.
 
@@ -8,7 +10,7 @@ The target is a usable iOS interface, SSH, Sileo, GPU acceleration and reliable 
 
 ## Local use
 
-Place your own iPhone X iOS 16.7.16 IPSW in `firmware/`, then run `./setup.sh`; alternatively use `./setup.sh /path/to/your.ipsw`. Setup extracts your firmware, prepares the SDK and support programs, builds the host renderer and iOS GPU bridge, validates the available host renderer, and bundles GPU support into the local images. `IOS_KVM_SETUP_GPU=0 ./setup.sh /path/to/your.ipsw` explicitly builds the baseline without the GPU bridge. Full clean-machine installation remains unverified. Apple firmware and generated images are never bundled in the public repository.
+Use this project with an iPhone X you own. Place your own iPhone X iOS 16.7.16 IPSW in `firmware/`, then run `./setup.sh`; alternatively use `./setup.sh /path/to/your.ipsw`. Setup extracts your firmware, prepares the SDK and support programs, builds the host renderer and iOS GPU bridge, validates the available host renderer, and bundles GPU support into the local images. `IOS_KVM_SETUP_GPU=0 ./setup.sh /path/to/your.ipsw` explicitly builds the baseline without the GPU bridge. Full clean-machine installation remains unverified. Apple firmware and generated images are never bundled in the public repository.
 
 `./run.sh` starts QEMU's native GTK display with OpenGL scaling and zoom-to-fit, four guest CPUs, 6 GiB mapped guest RAM and a 1 GiB translation cache, without a session time limit. The default screen is 750×1624 (2× density); `IOS_KVM_SCALE=3 ./run.sh` selects 1125×2436. Both preserve the phone's logical dimensions. Set `QEMU_SMP`, `QEMU_RAM_GB`, `QEMU_TB_MB` or `VM_DISPLAY` to override the other settings. ARM-on-x86 uses TCG; the CPU is emulated. Current development host: Linux, Ryzen 7 7435HS, 16 GiB RAM, RTX 4060.
 
@@ -17,6 +19,12 @@ The system image is now a read-only virtio disk, with a separate writable HFS da
 OpenGL in the viewer accelerates host-side display scaling, independently of the experimental guest GPU bridge. The host mouse pointer stays visible, and hovering does not grab it. For hosts without working OpenGL, use `VM_DISPLAY=gtk,zoom-to-fit=on,show-cursor=on ./run.sh`. Diagnostic VNC is opt-in with `QEMU_VNC=1 ./run.sh`; this selects the software GTK viewer because QEMU cannot combine VNC with this OpenGL context.
 
 `bash tools/ssh.sh` connects to root SSH through `127.0.0.1:2222` using a dedicated local key. Password authentication depends on your local SSH configuration and account database. When enabled, diagnostic VNC listens at `127.0.0.1:5901`. The writable data disk retains files and packages across VM restarts; a local first-boot snapshot is imported only once when present. Installed tweak loading and repeated Sileo GUI installations still need verification.
+
+## Tested host
+
+Only tested on Fedora Linux with a Ryzen 7 7435HS, 16 GiB RAM and RTX 4060. AMD and Intel hardware validation remains pending.
+
+Diagnostic VNC has no password authentication and binds only to the local loopback address.
 
 ## Graphics development
 
@@ -54,7 +62,7 @@ For actual guest CPU comparisons, `python3 tools/build-guest-tcg-bench.py` build
 
 Apple firmware, extracted system files and generated device identity data are local inputs and are not distributed in this repository.
 
-## Credits and licenses
+## Credits
 
 - OOSEX GANG and contributors: [HakiOS](https://github.com/oosexgang/hakios-xnu-kernel), imported under `vendor/hakios` from revision `a3384e031eb1e605cf37adaefc19991f04f6274b`. Its kernel port, drivers, loader, userland support and image tools provide the current starting components. Original copyright and license files are retained; their terms apply to their respective components.
 - dipa-studio and contributors: [ios-sweet](https://github.com/dipa-studio/ios-sweet), used for the first kernel boot experiment in the separate `../ios16-qemu` workspace.
@@ -63,8 +71,6 @@ Apple firmware, extracted system files and generated device identity data are lo
 - Yann Collet: xxHash, BSD 2-Clause license retained in [vendor/xxhash/xxhash.h](vendor/xxhash/xxhash.h); imported from the pinned Mesa source with a standalone compiler-macro adaptation.
 - Mesa and VirGL contributors: graphics implementation and host renderer; sources are fetched locally for development.
 - LZ4 contributors: lossless GPU transport compression, imported under `vendor/lz4` from v1.10.0 (`ebb370ca83af193212df4dcbadcc5d87bc0de2f0`); its BSD license is retained.
-
-This project has its own repository and integration work. It is not affiliated with Apple or the upstream projects.
 
 ## Planned device manager
 
