@@ -1,8 +1,8 @@
 # ios-kvm
 
-The name is inspired by osx-kvm. ARM guests on x86 hosts use QEMU TCG emulation, not KVM.
+## The name is inspired by osx-kvm. ARM guests on x86 hosts use QEMU TCG emulation, not KVM.
 
-Run your own iPhone X iOS 16.7.16 (20H392) firmware in QEMU on Linux.
+Run your own iPhone X iOS 16.7.16  firmware in QEMU on Linux. DO NOT USE FOR PIRACY!
 
 `ios-kvm` is the portable software project: users supply their own supported IPSW and keep their firmware, NAND and settings locally. Automatic GPU detection and setup for NVIDIA, AMD and Intel are project requirements; NVIDIA is the only hardware tested so far, and automatic setup remains unfinished. The intended separate private `PeaksiOS` repository is exclusively the owner's NAND backups and personal machine configuration, with no separate renderer implementation. It has not yet been created. Despite the project name, ARM guests on x86 hosts currently use QEMU TCG CPU emulation, not KVM.
 
