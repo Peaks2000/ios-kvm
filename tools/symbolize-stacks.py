@@ -17,10 +17,12 @@ def snapshots(text):
                        'slide': int(header[3], 16), 'threads': []}
             result.append(current)
         elif current:
-            thread = re.search(r'ustacks:  thread (0x[0-9a-fA-F]+)(?: "([^"]*)")?: (.*)', line)
+            thread = re.search(r'ustacks:  thread (0x[0-9a-fA-F]+)(?: "([^"]*)")?(?: \(([^)]*)\))?: (.*)', line)
             if thread:
                 current['threads'].append({'id': thread[1], 'name': thread[2] or '',
-                    'addresses': [int(v, 16) for v in re.findall(r'0x[0-9a-fA-F]+', thread[3])]})
+                    'state': thread[3] or '',
+                    'running_stack_warning': 'Last kernel entry; not an on-CPU sample, unwind may race' if thread[3] == 'running' else None,
+                    'addresses': [int(v, 16) for v in re.findall(r'0x[0-9a-fA-F]+', thread[4])]})
     return result
 
 

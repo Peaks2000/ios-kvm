@@ -23,6 +23,15 @@ ustacks:  thread 0x313d "com.apple.coreanimation.display.primary": 0x211b51030
         self.assertEqual(records[0]['threads'][1]['name'], '')
         self.assertEqual(len(records[1]['threads']), 1)
 
+    def test_running_threads_are_retained(self):
+        records = m.snapshots('ustacks: backboardd[177] 2 threads, shared cache slide 0x2a53c000\nustacks:  thread 0x514 "com.apple.coreanimation.display.primary" (running): 0x1b80e1034 0x0\nustacks:  thread 0x515 (running): 0x12345\n')
+        threads = records[0]['threads']
+        self.assertEqual(len(threads), 2)
+        self.assertEqual(threads[0]['state'], 'running')
+        self.assertEqual(threads[0]['addresses'], [0x1b80e1034, 0])
+        self.assertEqual(threads[1]['name'], '')
+        self.assertEqual(threads[1]['state'], 'running')
+
     def test_no_header_does_not_guess_slide(self):
         self.assertEqual(m.snapshots('ustacks:  thread 0x11: 0x1234'), [])
 
