@@ -181,4 +181,4 @@ print('Prepared opt-in direct caller-buffer readback')
 # connection. Test whether the additional resource-busy round trip is redundant.
 edit('gallium/drivers/virgl/virgl_resource.c',
      '   vws->resource_wait(vws, res->hw_res);\n   return vws->ios_kvm_readback',
-     '   /* Opt-in: the synchronous host readback follows this flush on the same socket. */\n   const char *skip_wait = getenv("IOS_KVM_READBACK_SKIP_WAIT");\n   if (!skip_wait || strcmp(skip_wait, "1"))\n      vws->resource_wait(vws, res->hw_res);\n   return vws->ios_kvm_readback')
+     '   const char *skip_wait = getenv("IOS_KVM_READBACK_SKIP_WAIT");\n   if (!skip_wait || strcmp(skip_wait, "1"))\n      vws->resource_wait(vws, res->hw_res);\n   return vws->ios_kvm_readback')
