@@ -179,6 +179,9 @@ print('Prepared opt-in direct caller-buffer readback')
 
 # Experiment only: synchronous readback follows the flush on the same vtest
 # connection. Test whether the additional resource-busy round trip is redundant.
+from readback_wait_policy import patch as patch_readback_wait
+path = mesa / 'gallium/drivers/virgl/virgl_resource.c'
+path.write_text(patch_readback_wait(path.read_text()))
+
 edit('gallium/drivers/virgl/virgl_resource.c',
-     '   vws->resource_wait(vws, res->hw_res);\n   return vws->ios_kvm_readback',
-     '   const char *skip_wait = getenv("IOS_KVM_READBACK_SKIP_WAIT");\n   if (!skip_wait || strcmp(skip_wait, "1"))\n      vws->resource_wait(vws, res->hw_res);\n   return vws->ios_kvm_readback')
+     '#include "virgl_resource.h"', '#include "virgl_resource.h"\n#include <unistd.h>')
