@@ -9,6 +9,7 @@ qemu_path=$(command -v -- "${QEMU_BINARY:-qemu-system-aarch64}") || {
     exit 1
 }
 export QEMU_BINARY=$(readlink -f "$qemu_path")
+python3 "$project_root/tools/qemu-cpu.py" --check
 cd "$(dirname "$0")/../vendor/hakios"
 mkdir -p logs
 if [ "${IOS_KVM_SESSION_MANAGED:-0}" != 1 ] && [ -f ../../.local/boot-features.json ] &&

@@ -10,6 +10,7 @@
 #      QEMU_EFI, QEMU_VARS  the UEFI firmware for aarch64 guests (found by itself where Arch's edk2-aarch64
 #                           puts it, or Debian/Ubuntu's /usr/share/AAVMF/AAVMF_CODE.fd and AAVMF_VARS.fd)
 cd "$(dirname "$0")"
+python3 ../../../tools/qemu-cpu.py --check || exit 1
 T=${1:-20}; shift
 # the UEFI firmware: where Arch's edk2-aarch64 puts it, or where Debian and Ubuntu's AAVMF does
 EFI=${QEMU_EFI-}; VARS_SRC=${QEMU_VARS-}
@@ -36,8 +37,7 @@ if [ -n "${QEMU_ESP:-}" ]; then
 fi
 RUN=()
 [ "$T" = 0 ] || RUN=(timeout "$T")
-"${RUN[@]}" "${QEMU_BINARY:-qemu-system-aarch64}" -name ios-kvm -M virt,gic-version=3 -cpu cortex-a76 -smp ${QEMU_SMP:-1} -m ${QEMU_MEM:-6G} \
-  -accel tcg,tb-size=${QEMU_TB_MB:-384} \
+"${RUN[@]}" python3 ../../../tools/qemu-cpu.py -- "${QEMU_BINARY:-qemu-system-aarch64}" -name ios-kvm -M virt,gic-version=3 -smp ${QEMU_SMP:-1} -m ${QEMU_MEM:-6G} \
   -drive if=pflash,format=raw,readonly=on,file="$EFI" \
   -drive if=pflash,format=raw,file=vars.fd \
   -drive file=fat:rw:esp,format=raw,if=virtio \
