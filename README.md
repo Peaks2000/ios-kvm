@@ -20,6 +20,29 @@ OpenGL in the viewer accelerates host-side display scaling, independently of the
 
 `bash tools/ssh.sh` connects to root SSH through `127.0.0.1:2222` using a dedicated local key. Password authentication depends on your local SSH configuration and account database. When enabled, diagnostic VNC listens at `127.0.0.1:5901`. The writable data disk retains files and packages across VM restarts; a local first-boot snapshot is imported only once when present. Installed tweak loading and repeated Sileo GUI installations still need verification.
 
+## Updating safely
+
+Stop the VM, then run:
+
+```bash
+./update.sh --check
+./update.sh
+```
+
+The updater fetches `Peaks2000/ios-kvm` (`master`) and rebases your local commits onto it. It saves a Git bundle, staged/unstaged patches and a receipt in a private `.local/updates/` directory before changing the checkout. Tracked local settings are temporarily stashed, restored with their staged state, and the recovery stash is retained. Untracked files are left in place; incoming files that collide with them are rejected. Nothing is pushed to GitHub by the updater.
+
+An active VM or unfinished Git operation blocks the update. A rebase conflict triggers an abort and restoration of local edits; if restoring those edits conflicts, resolve the reported files before running or building. The updater prints the recovery directory; `receipt.json` records the original commit and any saved stash. Keep that directory until you have verified the update. Do not use `git reset --hard` to resolve an update failure. Clones from the old rewritten commit history with no common ancestor are refused and need a separate migration.
+
+This updates **project source**, not iOS firmware. Your NAND/data disk, installed apps, tweaks, firmware, SSH keys and generated runtime images stay in place. It does not run `setup.sh`, format a device, rebuild runtime images, or restart the VM. Back up your stopped device storage separately before activating runtime changes; the Git bundle does **not** contain ignored device files. For the current disk/GPU runtime, rebuild while the VM is stopped:
+
+```bash
+bash tools/build-kernel.sh
+python3 tools/setup-gpu.py
+IOS_KVM_BUNDLE_GPU=1 IOS_KVM_GPU_BOOT=1 bash tools/build.sh
+```
+
+Only restart after all builds succeed. Read the release instructions before rebuilding across a storage-format or firmware change; automatic data-format migration and runtime rollback are not implemented. Forks can select `--source <repository>` and `--branch <branch>`; only use source repositories you trust.
+
 ## Install an IPA
 
 Run `./install-ipa.sh` to open **ios-kvm · Install IPA**, then drag one `.ipa` from your file manager onto that window, or click **Choose IPA…**. The running VM must have working SSH and TrollStore Lite installed. The window shows upload/install progress and errors; no VM restart is needed.
