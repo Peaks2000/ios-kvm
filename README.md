@@ -1,8 +1,8 @@
 # ios-kvm
 
-The name is inspired by osx-kvm. ARM guests on x86 hosts use QEMU TCG emulation, not KVM.
+## The name is inspired by osx-kvm. ARM guests on x86 hosts use QEMU TCG emulation, not KVM however KVM will be used for ARM hosts.
 
-Run your own iPhone X iOS 16.7.16 (20H392) firmware in QEMU on Linux.
+Run your own iPhone X iOS 16.7.16  firmware in QEMU on Linux. DO NOT USE FOR PIRACY!
 
 `ios-kvm` is the portable software project: users supply their own supported IPSW and keep their firmware, NAND and settings locally. Automatic GPU detection and setup for NVIDIA, AMD and Intel are project requirements; NVIDIA is the only hardware tested so far, and automatic setup remains unfinished. The intended separate private `PeaksiOS` repository is exclusively the owner's NAND backups and personal machine configuration, with no separate renderer implementation. It has not yet been created. Despite the project name, ARM guests on x86 hosts currently use QEMU TCG CPU emulation, not KVM.
 
@@ -23,6 +23,7 @@ OpenGL in the viewer accelerates host-side display scaling, independently of the
 ## Tested host
 
 Only tested on Fedora Linux with a Ryzen 7 7435HS, 16 GiB RAM and RTX 4060. AMD and Intel hardware validation remains pending.
+People have told me it works on some intel macs with no modifications so that is amazing :D
 
 Diagnostic VNC has no password authentication and binds only to the local loopback address.
 
@@ -74,18 +75,5 @@ Apple firmware, extracted system files and generated device identity data are lo
 - Mesa and VirGL contributors: graphics implementation and host renderer; sources are fetched locally for development.
 - LZ4 contributors: lossless GPU transport compression, imported under `vendor/lz4` from v1.10.0 (`ebb370ca83af193212df4dcbadcc5d87bc0de2f0`); its BSD license is retained.
 
-## Planned device manager
+## GUI device manager coming soon
 
-After the CPU/GPU and core VM work is stable, build a GUI to manage virtual devices and guide VM creation using each user's own IPSW, GPU detection, memory selection and persistent storage. Publish the application source in `ios-kvm` on GitHub. The owner's NAND and personal configuration remain separate in the intended private `PeaksiOS` repository.
-
-Pending consecutive touch movements for the same finger now coalesce in the kernel queue. Presses, releases and changes between fingers keep their order. This prevents a busy HID consumer from replaying a long trail of stale pointer positions; it does not make ARM emulation or GPU rendering faster. The bounded-queue overflow policy is unchanged. Run the queue checks with:
-
-```sh
-cc -O2 -Wall -Wextra -Werror -I vendor/hakios/xnu/files/bsd \
-  -I vendor/hakios/drivers/input tools/test-touch-queue.c -o .local/test-touch-queue
-.local/test-touch-queue
-```
-
-For frame/input diagnostics, boot with `CMDLINE='touch_lat=1 cpuload=250' ./run.sh`. After a gesture, `python3 tools/capture-kernel-trace.py --output .local/loader-trace.log` briefly pauses the VM, reads its loader trace ring and resumes it. Pass `--kernel` when testing an alternate kernel. Combine that trace with the session's `vm.log` using `tools/analyze-frame-gaps.py --active-touches-only --output .local/frame-gaps.json LOG...` to retain long stalls and report event queue delay during actual finger-down intervals. The upstream `vendor/hakios/tools/frames.py` remains useful for pipeline stage estimates, but its movement summary excludes gaps of100ms or more. Verify which screen the test opened before interpreting an app-specific result.
-
-Shared readback request batching is an opt-in experiment in the guest Mesa library: `IOS_KVM_SHARED_BATCH=1` combines three transport writes into one; unset or `0` retains the original writes. It preserves the vtest command bytes, memory pin ownership and host acknowledgement. Native wire-layout checks cover small, typical and maximum segment counts plus invalid lengths/counts. No iOS performance gain is established yet, and the bundled boot library is unchanged until runtime validation.
