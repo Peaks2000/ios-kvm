@@ -1,6 +1,6 @@
 # ios-kvm
 
-## The name is inspired by osx-kvm. ARM guests on x86 hosts use QEMU TCG emulation, not KVM.
+## The name is inspired by osx-kvm. ARM guests on x86 hosts use QEMU TCG emulation, not KVM however KVM will be used for ARM hosts soon.
 
 Run your own iPhone X iOS 16.7.16  firmware in QEMU on Linux. DO NOT USE FOR PIRACY!
 
