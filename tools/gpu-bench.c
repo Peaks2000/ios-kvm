@@ -52,7 +52,7 @@ static int run(int width, int height, int frames)
         uint64_t start = microseconds();
         glClearColor((frame + 1) / 32.0f, 0.25f, 0.5f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
-        glFinish();
+        if (!getenv("IOS_KVM_BENCH_NO_FINISH")) glFinish();
         uint64_t draw = microseconds();
         void *previous = lease ? set_lease(lease) : NULL;
         glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
@@ -116,7 +116,7 @@ static int flip_benchmark(void)
         glDisable(GL_SCISSOR_TEST); glClearColor(red,.25,.5,1); glClear(GL_COLOR_BUFFER_BIT);
         glEnable(GL_SCISSOR_TEST); glScissor(0,height/2,width,height/2);
         glClearColor(red,.75,.5,1); glClear(GL_COLOR_BUFFER_BIT); glDisable(GL_SCISSOR_TEST);
-        glFinish();
+        if (!getenv("IOS_KVM_BENCH_NO_FINISH")) glFinish();
         uint64_t start=microseconds();
         void *previous = leases[gpu] ? set_lease(leases[gpu]) : NULL;
         if (gpu) {
