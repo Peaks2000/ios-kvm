@@ -9,6 +9,7 @@
 #include <EGL/eglext.h>
 #include <GLES3/gl3.h>
 #include <arpa/inet.h>
+#include <poll.h>
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdint.h>
@@ -64,6 +65,14 @@ static void *ng_serve(void *argument) {
   fflush(stdout);
   uint32_t sequence = 0;
   for (;;) {
+    /* Keep dormant contexts alive; the I/O timeout bounds partial requests. */
+    struct pollfd ready = {.fd = fd, .events = POLLIN};
+    int wake;
+    do {
+      wake = poll(&ready, 1, -1);
+    } while (wake < 0 && errno == EINTR);
+    if (wake <= 0)
+      break;
     struct ng_batch batch;
     if (ng_io(fd, &batch, sizeof(batch), 0))
       break;

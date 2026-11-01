@@ -36,8 +36,10 @@ static void ng_delete(unsigned kind, GLsizei n, const GLuint *names) {
   void glDelete##name(GLsizei n, const GLuint *p) { ng_delete(kind, n, p); }
 OBJECT(1, Buffers)
 OBJECT(2, Textures)
-OBJECT(3, Framebuffers) OBJECT(4, Renderbuffers) OBJECT(5, VertexArrays)
-    OBJECT(6, Samplers) OBJECT(7, Queries) OBJECT(8, TransformFeedbacks)
+OBJECT(3, Framebuffers)
+OBJECT(4, Renderbuffers)
+OBJECT(5, VertexArrays) OBJECT(6, Samplers) OBJECT(7, Queries)
+    OBJECT(8, TransformFeedbacks)
 #undef OBJECT
         void glShaderSource(GLuint shader, GLsizei count,
                             const GLchar *const *strings,
@@ -153,6 +155,15 @@ static GLint ng_location(unsigned kind, GLuint program, const GLchar *name) {
     ng_failure("location reply");
   return value;
 }
+void glBindAttribLocation(GLuint program, GLuint index, const GLchar *name) {
+  if (!name)
+    ng_failure("null attribute name");
+  size_t bytes = strlen(name) + 1;
+  if (bytes > 65536)
+    ng_failure("attribute name size");
+  uint64_t a[] = {program, index};
+  ng_blob(NG_BIND_ATTRIB_LOCATION, a, 2, name, bytes, NULL, 0, 0);
+}
 GLint glGetUniformLocation(GLuint program, const GLchar *name) {
   return ng_location(0, program, name);
 }
@@ -160,7 +171,7 @@ GLint glGetAttribLocation(GLuint program, const GLchar *name) {
   return ng_location(1, program, name);
 }
 static const GLubyte *ng_string(GLenum pname, GLuint index, int indexed) {
-  struct ng_client *c = ng_current();
+  struct ios_kvm_native_gl_context *c = ng_current();
   for (unsigned i = 0; i < c->string_count; i++)
     if (c->strings[i].pname == pname && c->strings[i].index == index &&
         c->strings[i].indexed == indexed)
@@ -305,10 +316,12 @@ static void ng_uniform(GLint location, GLsizei count, unsigned components,
   }
 UNIFORM(1, fv, GLfloat, 0)
 UNIFORM(2, fv, GLfloat, 0)
-UNIFORM(3, fv, GLfloat, 0) UNIFORM(4, fv, GLfloat, 0) UNIFORM(1, iv, GLint, 1)
-    UNIFORM(2, iv, GLint, 1) UNIFORM(3, iv, GLint, 1) UNIFORM(4, iv, GLint, 1)
-        UNIFORM(1, uiv, GLuint, 2) UNIFORM(2, uiv, GLuint, 2)
-            UNIFORM(3, uiv, GLuint, 2) UNIFORM(4, uiv, GLuint, 2)
+UNIFORM(3, fv, GLfloat, 0)
+UNIFORM(4, fv, GLfloat, 0)
+UNIFORM(1, iv, GLint, 1) UNIFORM(2, iv, GLint, 1) UNIFORM(3, iv, GLint, 1)
+    UNIFORM(4, iv, GLint, 1) UNIFORM(1, uiv, GLuint, 2)
+        UNIFORM(2, uiv, GLuint, 2) UNIFORM(3, uiv, GLuint, 2)
+            UNIFORM(4, uiv, GLuint, 2)
 #undef UNIFORM
 #define MATRIX(n)                                                              \
   void glUniformMatrix##n##fv(GLint location, GLsizei count,                   \

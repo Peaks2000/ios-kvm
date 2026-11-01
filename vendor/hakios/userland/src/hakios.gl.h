@@ -5,6 +5,8 @@
 #ifndef HAKIOS_GL_H
 #define HAKIOS_GL_H
 
+#include <stdint.h>
+
 struct hakios_gl;
 
 struct hakios_gl *hakios_gl_create(int version);              /* a context of OpenGL ES 2 or 3; NULL: none to be had */

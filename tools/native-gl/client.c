@@ -1,6 +1,7 @@
 /* Experimental native GLES proxy. Not installed into EAGL by the launcher. */
 #define _POSIX_C_SOURCE 200809L
 #define _DARWIN_C_SOURCE 1
+#include "context.h"
 #include "io.h"
 #include "protocol.h"
 #include "schema.h"
@@ -17,8 +18,10 @@ struct ng_string_entry {
   int indexed;
   char *text;
 };
-struct ng_client {
+struct ios_kvm_native_gl_context {
   int fd;
+  int explicit_owner;
+  pthread_mutex_t ownership;
   uint32_t sequence;
   size_t used, allocated;
   uint8_t *commands;
@@ -31,60 +34,132 @@ static void ng_failure(const char *reason) {
   fprintf(stderr, "ios-kvm native GL: %s\n", reason);
   abort();
 }
-static void ng_destroy(void *pointer) {
-  struct ng_client *c = pointer;
+static size_t ng_flush_context(struct ios_kvm_native_gl_context *, void *,
+                               size_t);
+static void ng_free(struct ios_kvm_native_gl_context *c) {
   if (!c)
     return;
-  close(c->fd);
+  if (c->fd >= 0)
+    close(c->fd);
   free(c->commands);
   for (unsigned i = 0; i < c->string_count; i++)
     free(c->strings[i].text);
   free(c->strings);
+  pthread_mutex_destroy(&c->ownership);
   free(c);
 }
+static void ng_tls_release(void *pointer) {
+  struct ios_kvm_native_gl_context *c = pointer;
+  if (!c)
+    return;
+  if (c->used)
+    ng_flush_context(c, NULL, 0);
+  int implicit = !c->explicit_owner;
+  pthread_mutex_unlock(&c->ownership);
+  if (implicit)
+    ng_free(c);
+}
 static void ng_key_init(void) {
-  if (pthread_key_create(&ng_key, ng_destroy))
+  if (pthread_key_create(&ng_key, ng_tls_release))
     ng_failure("TLS key");
 }
-static struct ng_client *ng_current(void) {
-  pthread_once(&ng_once, ng_key_init);
-  struct ng_client *c = pthread_getspecific(ng_key);
-  if (c)
-    return c;
-  c = calloc(1, sizeof(*c));
+static struct ios_kvm_native_gl_context *ng_open(int explicit_owner) {
+  struct ios_kvm_native_gl_context *c = calloc(1, sizeof(*c));
   if (!c)
-    ng_failure("client allocation");
+    return NULL;
   c->fd = -1;
+  if (pthread_mutex_init(&c->ownership, NULL)) {
+    free(c);
+    return NULL;
+  }
+  c->explicit_owner = explicit_owner;
   struct ng_hello hello = {
       .magic = NG_MAGIC, .version = NG_VERSION, .schema = NG_SCHEMA};
   if (ng_token(getenv("IOS_KVM_NATIVE_GL_TOKEN_FILE"), hello.token))
-    ng_failure("private token file required");
+    goto failed;
   const char *host = getenv("IOS_KVM_NATIVE_GL_HOST"),
              *port = getenv("IOS_KVM_NATIVE_GL_PORT");
   char *end = NULL;
   unsigned long number = port ? strtoul(port, &end, 10) : 6733;
   if (number < 1024 || number > 65535 || (port && (!*port || *end)))
-    ng_failure("invalid port");
+    goto failed;
   struct sockaddr_in address = {.sin_family = AF_INET,
                                 .sin_port = htons(number)};
   if (inet_pton(AF_INET, host ? host : "10.0.2.2", &address.sin_addr) != 1)
-    ng_failure("numeric IPv4 host required");
+    goto failed;
   c->fd = socket(AF_INET, SOCK_STREAM, 0);
   if (c->fd < 0)
-    ng_failure("socket");
+    goto failed;
   ng_socket_options(c->fd);
   if (connect(c->fd, (struct sockaddr *)&address, sizeof(address)))
-    ng_failure("connect");
+    goto failed;
   uint32_t ack = 0;
   if (ng_io(c->fd, &hello, sizeof(hello), 1) ||
       ng_io(c->fd, &ack, sizeof(ack), 0) || ack != NG_MAGIC)
-    ng_failure("handshake");
-  if (pthread_setspecific(ng_key, c))
-    ng_failure("TLS value");
+    goto failed;
+  return c;
+failed:
+  ng_free(c);
+  return NULL;
+}
+struct ios_kvm_native_gl_context *
+ios_kvm_native_gl_context_create(int version) {
+  if (version != 3)
+    return NULL;
+  return ng_open(1);
+}
+int ios_kvm_native_gl_make_current(struct ios_kvm_native_gl_context *next) {
+  pthread_once(&ng_once, ng_key_init);
+  struct ios_kvm_native_gl_context *old = pthread_getspecific(ng_key);
+  if (old == next)
+    return 1;
+  if (next && pthread_mutex_trylock(&next->ownership))
+    return 0;
+  if (old && old->used)
+    ng_flush_context(old, NULL, 0);
+  if (pthread_setspecific(ng_key, next)) {
+    if (next)
+      pthread_mutex_unlock(&next->ownership);
+    return 0;
+  }
+  if (old) {
+    int implicit = !old->explicit_owner;
+    pthread_mutex_unlock(&old->ownership);
+    if (implicit)
+      ng_free(old);
+  }
+  return 1;
+}
+int ios_kvm_native_gl_context_destroy(struct ios_kvm_native_gl_context *c) {
+  if (!c)
+    return 1;
+  pthread_once(&ng_once, ng_key_init);
+  if (pthread_getspecific(ng_key) == c) {
+    if (!ios_kvm_native_gl_make_current(NULL))
+      return 0;
+  }
+  if (pthread_mutex_trylock(&c->ownership))
+    return 0;
+  pthread_mutex_unlock(&c->ownership);
+  ng_free(c);
+  return 1;
+}
+static struct ios_kvm_native_gl_context *ng_current(void) {
+  pthread_once(&ng_once, ng_key_init);
+  struct ios_kvm_native_gl_context *c = pthread_getspecific(ng_key);
+  if (c)
+    return c;
+  c = ng_open(0);
+  if (!c)
+    ng_failure("implicit context connection");
+  if (!ios_kvm_native_gl_make_current(c)) {
+    ng_free(c);
+    ng_failure("implicit context ownership");
+  }
   return c;
 }
-static size_t ng_flush(void *output, size_t capacity) {
-  struct ng_client *c = ng_current();
+static size_t ng_flush_context(struct ios_kvm_native_gl_context *c,
+                               void *output, size_t capacity) {
   if (!c->used) {
     if (capacity)
       ng_failure("empty query");
@@ -107,8 +182,11 @@ static size_t ng_flush(void *output, size_t capacity) {
   c->used = 0;
   return reply.bytes;
 }
+static size_t ng_flush(void *output, size_t capacity) {
+  return ng_flush_context(ng_current(), output, capacity);
+}
 static void ng_enqueue(uint32_t opcode, const void *data, size_t size) {
-  struct ng_client *c = ng_current();
+  struct ios_kvm_native_gl_context *c = ng_current();
   if (size > NG_LIMIT - sizeof(struct ng_record))
     ng_failure("command limit");
   size_t padded = (size + 7) & ~(size_t)7;
@@ -147,11 +225,8 @@ static void ng_call(uint32_t op, const void *data, size_t size, void *output,
 }
 #include "client-pointers.h"
 #include "client-scalars.h"
-/* Explicit diagnostic cleanup; the future EAGL adapter will own context
- * lifetime. */
+/* Diagnostic implicit contexts are released; explicit contexts remain
+ * owner-managed. */
 void ios_kvm_native_gl_disconnect(void) {
-  pthread_once(&ng_once, ng_key_init);
-  struct ng_client *c = pthread_getspecific(ng_key);
-  pthread_setspecific(ng_key, NULL);
-  ng_destroy(c);
+  ios_kvm_native_gl_make_current(NULL);
 }

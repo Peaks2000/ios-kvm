@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import socket
 import struct
+import time
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--generated', type=Path, required=True)
@@ -13,6 +14,7 @@ p.add_argument('--token', type=Path, required=True)
 p.add_argument('--port', type=int, required=True)
 a = p.parse_args()
 magic = 0x4e474c33
+wire_version = int(re.search(r"#define NG_VERSION (\d+)", Path(__file__).with_name("protocol.h").read_text())[1])
 schema = int(re.search(r'0x([0-9a-f]+)', (a.generated / 'schema.h').read_text())[1], 16)
 token = a.token.read_bytes()
 assert len(token) == 32
@@ -28,7 +30,7 @@ def read(s, n):
         out += b
     return bytes(out)
 
-def connect(*, secret=token, version=1, fingerprint=schema):
+def connect(*, secret=token, version=wire_version, fingerprint=schema):
     s = socket.create_connection(('127.0.0.1', a.port), timeout=5)
     s.settimeout(5)
     s.sendall(struct.pack('<IIQ32s', magic, version, fingerprint, secret))
@@ -59,6 +61,7 @@ def healthy():
 
 for label, kwargs in [('wrong token', {'secret': bytes(32)}),
                       ('version mismatch', {'version': 99}),
+                      ('previous protocol version', {'version': wire_version - 1}),
                       ('schema mismatch', {'fingerprint': schema ^ 1})]:
     with connect(**kwargs) as s:
         assert closed(s), label
@@ -95,4 +98,12 @@ for _ in range(24):
         s.shutdown(socket.SHUT_WR)
         assert closed(s)
 healthy()
+# An idle context must outlive the twenty-second partial-request I/O timeout.
+with authenticated() as s:
+    time.sleep(21)
+    batch(s, record(opcode['glGetError']), 4)
+    assert struct.unpack('<IIII', read(s, 16)) == (magic, 1, 0, 4)
+    assert read(s, 4) == b'\0' * 4
+healthy()
+print('Idle context survived partial-request timeout')
 print('Native GL transport check PASSED (authentication, bounds, malformed blobs, disconnects, recovery)')

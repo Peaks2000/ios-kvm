@@ -108,6 +108,7 @@ static int ng_pointer(uint32_t opcode, const uint8_t *data, size_t size,
   case NG_GET_SHADER:
   case NG_GET_PROGRAM:
   case NG_LOCATION:
+  case NG_BIND_ATTRIB_LOCATION:
     words = 2;
     break;
   case NG_SHADER_SOURCE:
@@ -259,6 +260,12 @@ static int ng_pointer(uint32_t opcode, const uint8_t *data, size_t size,
       glGetShaderInfoLog(a[1], a[2], &length, text);
     memcpy(output, &length, 4);
     *used = a[2] + 4;
+    return 0;
+  }
+  case NG_BIND_ATTRIB_LOCATION: {
+    if (!bytes || bytes > 65536 || blob[bytes - 1])
+      return -1;
+    glBindAttribLocation(a[0], a[1], (const char *)blob);
     return 0;
   }
   case NG_LOCATION: {

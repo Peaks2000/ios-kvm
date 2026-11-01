@@ -1,6 +1,7 @@
 /* Exercises the proxy with guest-created resources, shader text and padded
  * pixels. */
 #define _POSIX_C_SOURCE 200809L
+#include "context.h"
 #include "protocol.h"
 #include <GLES3/gl3.h>
 #include <pthread.h>
@@ -122,6 +123,89 @@ static void large_surface(unsigned width, unsigned height, GLenum format) {
   printf("Native proxy phone-size %ux%u format=%x: all pixels passed\n", width,
          height, format);
 }
+static void context_pixel(unsigned r, unsigned g, unsigned b) {
+  uint8_t pixels[16];
+  glReadPixels(0, 0, 2, 2, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+  for (unsigned i = 0; i < 4; i++)
+    require(abs((int)pixels[i * 4] - (int)r) <= 1 &&
+                abs((int)pixels[i * 4 + 1] - (int)g) <= 1 &&
+                abs((int)pixels[i * 4 + 2] - (int)b) <= 1 &&
+                pixels[i * 4 + 3] == 255,
+            "explicit context pixels");
+}
+static void context_scene(unsigned r, unsigned g, unsigned b) {
+  GLuint tex = texture(2, 2), fbo;
+  glGenFramebuffers(1, &fbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                         tex, 0);
+  require(glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE,
+          "explicit context FBO");
+  glClearColor(r / 255.0f, g / 255.0f, b / 255.0f, 1);
+  glClear(GL_COLOR_BUFFER_BIT);
+}
+static void *context_busy(void *context) {
+  require(!ios_kvm_native_gl_make_current(context),
+          "context cannot be current on two threads");
+  require(!ios_kvm_native_gl_context_destroy(context),
+          "busy context cannot be destroyed");
+  return NULL;
+}
+static void *context_handoff(void *context) {
+  require(ios_kvm_native_gl_make_current(context),
+          "context migrates after release");
+  context_pixel(191, 0, 0);
+  glClearColor(0, .5f, 0, 1);
+  glClear(GL_COLOR_BUFFER_BIT);
+  /* Thread exit must flush the pending clear and release, preserving the owned
+   * context. */
+  return NULL;
+}
+static void explicit_contexts(void) {
+  struct ios_kvm_native_gl_context *a = ios_kvm_native_gl_context_create(3),
+                                   *b = ios_kvm_native_gl_context_create(3);
+  require(a && b, "explicit context creation");
+  require(!ios_kvm_native_gl_context_create(2),
+          "unsupported context version returns NULL");
+  require(ios_kvm_native_gl_make_current(a), "bind A");
+  context_scene(191, 0, 0);
+  require(ios_kvm_native_gl_make_current(b), "bind B");
+  context_scene(0, 0, 64);
+  for (unsigned i = 0; i < 12; i++) {
+    require(ios_kvm_native_gl_make_current(a), "switch to A");
+    context_pixel(191, 0, 0);
+    require(ios_kvm_native_gl_make_current(b), "switch to B");
+    context_pixel(0, 0, 64);
+  }
+  require(ios_kvm_native_gl_make_current(a), "bind owned A");
+  pthread_t worker;
+  require(!pthread_create(&worker, NULL, context_busy, a), "busy worker");
+  pthread_join(worker, NULL);
+  context_pixel(191, 0, 0);
+  require(ios_kvm_native_gl_make_current(NULL), "release A");
+  require(!pthread_create(&worker, NULL, context_handoff, a), "handoff worker");
+  pthread_join(worker, NULL);
+  require(ios_kvm_native_gl_make_current(a), "rebind after worker exit");
+  context_pixel(0, 128, 0);
+  require(ios_kvm_native_gl_context_destroy(a), "destroy current A");
+  require(ios_kvm_native_gl_make_current(b), "B survives A destruction");
+  context_pixel(0, 0, 64);
+  const char *port = getenv("IOS_KVM_NATIVE_GL_PORT");
+  char *saved = port ? strdup(port) : NULL;
+  setenv("IOS_KVM_NATIVE_GL_PORT", "65536", 1);
+  require(!ios_kvm_native_gl_context_create(3),
+          "failed context creation is recoverable");
+  if (saved) {
+    setenv("IOS_KVM_NATIVE_GL_PORT", saved, 1);
+    free(saved);
+  } else
+    unsetenv("IOS_KVM_NATIVE_GL_PORT");
+  context_pixel(0, 0, 64);
+  require(ios_kvm_native_gl_make_current(NULL), "release B");
+  require(ios_kvm_native_gl_context_destroy(b), "destroy released B");
+  puts("Native proxy explicit contexts: switching, ownership, migration, "
+       "thread exit and recovery passed");
+}
 int main(void) {
   setvbuf(stdout, NULL, _IOLBF, 0);
   printf("Native proxy renderer: %s\n", glGetString(GL_RENDERER));
@@ -148,6 +232,8 @@ int main(void) {
   GLuint program = glCreateProgram();
   glAttachShader(program, vs);
   glAttachShader(program, fs);
+  glBindAttribLocation(program, 0, "p");
+  glBindAttribLocation(program, 1, "uv");
   glLinkProgram(program);
   GLint ok;
   glGetProgramiv(program, GL_LINK_STATUS, &ok);
@@ -290,6 +376,7 @@ int main(void) {
   glFinish();
   require(glGetError() == 0, "cleanup");
   ios_kvm_native_gl_disconnect();
+  explicit_contexts();
   puts("Native GL general API check PASSED (20 frames, padded input/output, "
        "shader errors, independent thread contexts)");
   return 0;

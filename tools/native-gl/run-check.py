@@ -71,7 +71,9 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
         command = f'mkdir -p {shlex.quote(guest_path)} && chmod 700 {shlex.quote(guest_path)}'
         subprocess.run([*ssh, command], cwd=root, stdout=deploy_log, stderr=deploy_log, timeout=30, check=True)
         for source, name, mode in [(local / 'libios-kvm-native-gl.dylib', 'libios-kvm-native-gl.dylib', '600'),
-                                   (local / 'guest-check', 'guest-check', '700'), (token, 'token', '600')]:
+                                   (local / 'guest-check', 'guest-check', '700'),
+                                   (local / 'context-race-check', 'context-race-check', '700'),
+                                   (token, 'token', '600')]:
             path = shlex.quote(guest_path + '/' + name)
             command = f'umask 077; cat > {path} && chmod {mode} {path}'
             subprocess.run([*ssh, command], input=source.read_bytes(), cwd=root,
@@ -90,9 +92,17 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
             raise RuntimeError('actual renderer differs from selected profile')
         if software == bool(selected.get('hardware')):
             raise RuntimeError('actual hardware/software renderer disagrees with profile')
+        race_command = command.replace(shlex.quote(guest_path + '/guest-check'),
+                                       shlex.quote(guest_path + '/context-race-check'))
+        race = subprocess.run([*ssh, race_command], cwd=root, capture_output=True, text=True, timeout=45)
+        race_output = race.stdout + race.stderr
+        (a.output / 'context-race.log').write_text(race_output)
+        if race.returncode or 'Native GL context teardown race check PASSED' not in race_output:
+            raise RuntimeError('guest context teardown race check failed')
+        receipt.update(context_race_passed=True)
         receipt.update(passed=True, actual_renderer=renderer,
                        hashes={name: hashlib.sha256((local / name).read_bytes()).hexdigest()
-                               for name in ['libios-kvm-native-gl.dylib', 'guest-check']})
+                               for name in ['libios-kvm-native-gl.dylib', 'guest-check', 'context-race-check']})
         receipt['hashes']['server'] = hashlib.sha256(server_binary.read_bytes()).hexdigest()
     except Exception as exc:
         receipt.update(passed=False, error=str(exc))
