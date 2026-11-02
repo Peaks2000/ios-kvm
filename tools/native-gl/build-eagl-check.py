@@ -12,7 +12,7 @@ out = root / '.local/native-gl-api'
 subprocess.run(['python3', str(src / 'eagl-coverage.py')], cwd=root, check=True)
 if not json.loads((out / 'eagl-coverage/coverage.json').read_text()).get('bridge_linked'):
     raise SystemExit('EAGL bridge has unresolved symbols; isolated test cannot use an older artifact')
-text = (src / 'eagl-check.m').read_text() + (src / 'eagl-surface-check.h').read_text()
+text = ''.join((src / name).read_text() for name in ('eagl-check.m', 'eagl-surface-check.h', 'format-check.h'))
 names = set(re.findall(r'\b(gl[A-Z]\w*)\s*\(', text))
 slots = {}
 for line in (root / 'vendor/hakios/userland/src/eagl_slots.txt').read_text().splitlines():

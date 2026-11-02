@@ -45,7 +45,7 @@ extra = [prototypes[n] for n in missing if n in prototypes]
 (out / 'eagl_gen.h').write_text(result.stdout + '\n#ifdef EAGL_GEN_DECLARATIONS\n' +
                                '\n'.join(extra) + '\n#endif\n')
 clang = ['clang', '-Qunused-arguments', '-target', 'arm64-apple-ios16.0',
-         '-isysroot', str(root / '.local/sdks/iPhoneOS16.5.sdk'), '-O2', '-I', str(out)]
+         '-isysroot', str(root / '.local/sdks/iPhoneOS16.5.sdk'), '-O2', '-DIOS_KVM_NATIVE_EAGL=1', '-I', str(out)]
 r = subprocess.run([*clang, '-c', str(src / 'eagl.c'), '-o', str(out / 'eagl.o')],
                    capture_output=True, text=True)
 (out / 'compile.log').write_text(r.stdout + r.stderr)

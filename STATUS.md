@@ -1,5 +1,55 @@
 # Local development status
 
+## November 2: native compositor formats, error semantics and mobile identity
+
+- Inspected the actual running VirGL compositor log: ordinary UI content uses
+  alpha8, luminance/alpha8 and RGBA16F/half-float textures in addition to RGBA/
+  BGRA bytes. The native proxy previously rejected these. Added shared byte-size
+  calculation and row packing for alpha/luminance/luminance-alpha, red/RG/RGB/
+  RGBA component data and packed RGB565/RGBA4444/5551/2101010. Host uploads retain
+  their actual format/type rather than forcing RGBA. BGRA bytes still convert
+  on the host. Native driver validation still governs legal internal formats.
+- Added21 shader-sampled layouts, three fresh5x3 frames each, with image plus
+  partial subimage updates, odd row lengths, eight-byte alignment, row/pixel
+  skips and untouched padding. The same63 frames run through the direct proxy
+  and actual EAGL macro dispatch. Packed/float data are checked by decoded colour
+  values, not by roundtripping the same encoded bytes. Core and OES half-float
+  tokens are exercised. Shared readback remains explicitly restricted to RGBA/
+  BGRA unsigned bytes; malformed half/float/shared requests reject without writes.
+- Wire version6 adds a GPU success flag to copied readback: driver errors remain
+  observable, and failed reads preserve the entire guest destination. Tests
+  verify incomplete-FBO reads leave all256 sentinel bytes unchanged and return
+  the GL error once. Added malformed wider-image length/type cases and reran
+  disposable sealed-RAM bounds tests on NVIDIA and LLVMPIPE.
+- The first EAGL negative test exposed its automatic diagnostics consuming caller
+  GL errors. Save those flags per context and merge them with explicit queries.
+  Native builds now default to no per-call polling, which otherwise forces a
+  synchronous query after nearly every GL call and defeats batching. Optional
+  --eagl-check-every-call verifies enabled diagnostics still preserve errors.
+  The ordinary Mesa build retains its original polling policy. Error visibility
+  also exposed a fixture restoring a deleted current program; it now unbinds
+  before deleting. These fixes are not a new desktop FPS measurement.
+- The Mesa/VirGL control initially failed on HALF_FLOAT_OES uploads; normalize
+  that older Apple token to core HALF_FLOAT in both bridges, including IOSurface
+  texture uploads. The fresh Mesa control then passes all24 shader frames plus
+  all63 format frames with its usual diagnostics enabled. Receipt/log:
+  `.local/native-gl-api/formats-mesa-control-v2`. No installed library changed.
+- Native NVIDIA default-policy and LLVMPIPE diagnostic-policy suites pass with
+  ASan/UBSan hosts, driver leak detection disabled and no sanitizer reports:
+  `.local/native-gl-api/formats-final-{nvidia,software}`. Native error-policy
+  selection is checked against an emitted runtime line. NVIDIA public API/format/
+  shared-surface/context/EAGL suites also pass as UID/GID501, matching the observed
+  backboardd identity, with owner-only temporary tokens. A separate launcher
+  drops supplementary groups/GID/UID before exec; every test verifies its actual
+  identity. The final launcher remains root-owned outside the mobile-writable
+  child tree. Receipt `.local/native-gl-api/formats-mobile-final-nvidia`.
+  The wire6 producer-exit/observer pixel-and-release test also passes with an
+  ASan/UBSan NVIDIA host: `.local/native-gl-api/formats-exit-nvidia`.
+- Normal backboardd remains on its installed VirGL bundle; no VM/compositor
+  restart or storage change. Pending gl_lat and IPA-installer changes remain
+  unstaged. Native desktop integration, full advertised API/extension contracts,
+  physical AMD/Intel validation, CPU speed and iPhone-X comparisons remain open.
+
 ## November 2: remove native transfer roundtrips; verify producer exit
 
 - Native GLES now tracks valid pixel-store state per context instead of sending

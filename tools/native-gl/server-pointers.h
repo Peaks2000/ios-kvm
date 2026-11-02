@@ -59,10 +59,10 @@ static int ng_objects(int generate, uint64_t kind, GLsizei n, GLuint *values) {
 }
 static int ng_pixels(uint64_t width, uint64_t height, uint64_t format,
                      uint64_t type, size_t *bytes) {
-  if (width > 4096 || height > 4096 ||
-      (format != GL_RGBA && format != NG_BGRA) || type != GL_UNSIGNED_BYTE)
+  size_t pixel = ng_pixel_size(format, type);
+  if (width > 4096 || height > 4096 || !pixel)
     return -1;
-  *bytes = (size_t)width * height * 4;
+  *bytes = (size_t)width * height * pixel;
   return *bytes <= NG_LIMIT ? 0 : -1;
 }
 static void ng_swap_rb(uint8_t *to, const uint8_t *from, size_t n) {
@@ -310,27 +310,37 @@ static int ng_pointer(uint32_t opcode, const uint8_t *data, size_t size,
     }
     if (sub)
       glTexSubImage2D(a[0], (GLint)a[1], (GLint)a[2], (GLint)a[3], a[4], a[5],
-                      GL_RGBA, a[7], pixels);
+                      a[fi] == NG_BGRA ? GL_RGBA : a[fi],
+                      ng_pixel_native_type(a[7]), pixels);
     else
       glTexImage2D(a[0], (GLint)a[1], a[2] == NG_BGRA ? GL_RGBA : (GLint)a[2],
-                   a[3], a[4], (GLint)a[5], GL_RGBA, a[7],
-                   a[8] ? pixels : NULL);
+                   a[3], a[4], (GLint)a[5], a[fi] == NG_BGRA ? GL_RGBA : a[fi],
+                   ng_pixel_native_type(a[7]), a[8] ? pixels : NULL);
     free(converted);
     ng_pixel_restore(0, old);
     return 0;
   }
   case NG_READ_PIXELS: {
     size_t n;
-    if (bytes || ng_pixels(a[2], a[3], a[4], a[5], &n) || n > capacity)
+    if (bytes || ng_pixels(a[2], a[3], a[4], a[5], &n) || capacity < 4 ||
+        n > capacity - 4)
       return -1;
     GLint old[4];
     if (ng_pixel_state(1, old))
       return -1;
-    glReadPixels((GLint)a[0], (GLint)a[1], a[2], a[3], GL_RGBA, a[5], output);
-    if (a[4] == NG_BGRA)
-      ng_swap_rb(output, output, n);
+    ng_errors_collect();
+    uint8_t *pixels = (uint8_t *)output + 4;
+    glReadPixels((GLint)a[0], (GLint)a[1], a[2], a[3],
+                 a[4] == NG_BGRA ? GL_RGBA : a[4], ng_pixel_native_type(a[5]),
+                 pixels);
+    int32_t failed = ng_errors_collect();
+    if (!failed && a[4] == NG_BGRA)
+      ng_swap_rb(pixels, pixels, n);
     ng_pixel_restore(1, old);
-    *used = n;
+    if (ng_errors_collect())
+      failed = 1;
+    memcpy(output, &failed, 4);
+    *used = n + 4;
     return 0;
   }
   case NG_UNIFORM_ARRAY: {

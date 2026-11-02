@@ -37,6 +37,27 @@ static GLuint shader(GLenum kind, const char *text) {
   return s;
 }
 #include "eagl-surface-check.h"
+static GLuint format_shader(GLenum kind, const char *text) {
+  char source[1024];
+  int length = snprintf(source, sizeof(source), "#version 300 es\n%s", text);
+  check(length > 0 && (size_t)length < sizeof(source), "format shader source");
+  return shader(kind, source);
+}
+static GLuint format_texture(unsigned w, unsigned h) {
+  GLuint name;
+  glGenTextures(1, &name);
+  glBindTexture(GL_TEXTURE_2D, name);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+               NULL);
+  return name;
+}
+#define NG_FORMAT_SHADER format_shader
+#define require check
+#define texture format_texture
+#include "format-check.h"
+#undef texture
+#undef require
+#undef NG_FORMAT_SHADER
 int main(int argc, char **argv) {
   @autoreleasepool {
     if (argc != 2)
@@ -139,12 +160,14 @@ int main(int argc, char **argv) {
         check(glGetError() == 0, "EAGL GL error state");
         printf("Native EAGL macro frame %u: all pixels passed\n", frame);
       }
+      glUseProgram(0);
       glDeleteProgram(program);
       glDeleteShader(vs);
       glDeleteShader(fs);
       printf("Native EAGL shader variant %u passed\n", variant);
     }
     shared_eagl_surface(context, library);
+    texture_format_check();
     glDeleteBuffers(2, buffers);
     glDeleteVertexArrays(1, &vao);
     glDeleteFramebuffers(1, &fbo);

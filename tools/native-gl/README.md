@@ -43,9 +43,19 @@ EGL/GLES interfaces alone is not proof that those devices pass.
 - Shader text, compilation/link queries and logs; program/uniform locations;
   buffer uploads/subupdates; generated/deleted GL objects; explicit attribute locations; buffered vertex
   attributes and indexed draws; uniform vectors and square matrices.
-- RGBA/BGRA 8-bit texture upload/subimage and readback, preserving row alignment,
-  row length, skipped rows/pixels and untouched output padding. BGRA is converted
-  on the host, so driver-specific BGRA extensions are not required for transfers.
+- Texture upload/subimage layouts for alpha, luminance, luminance/alpha, red,
+  RG, RGB and RGBA bytes; red/RG/RGB/RGBA half/float components; and packed
+  RGB565, RGBA4444/5551 and RGBA2101010. Native driver validation determines
+  legal internal-format/type combinations. The21 tested layouts are sampled by
+  real shaders over63 changing images, including partial subupdates, odd widths,
+  eight-byte alignment, skipped rows/pixels and padding. Both direct proxy and
+  EAGL macro dispatch are tested. BGRA byte transfers are converted on the host,
+  so driver-specific BGRA upload extensions are not required. Other BGRA types,
+  integer/depth/stencil pixel transfers and PBO transfers remain unsupported.
+- Copied readback includes an explicit GPU success flag (wire version6). Native
+  GL errors are preserved, and a failed GPU read leaves caller bytes untouched.
+  Shared readback deliberately remains RGBA/BGRA unsigned bytes only; expanded
+  upload sizing cannot accidentally permit wider writes into that path.
 - Integer/float state queries, shader attachment lists, active uniform names,
   uniform values and texture/vertex/framebuffer metadata. Reflection determines
   scalar/vector/matrix output size and array element locations; a bounded native
@@ -80,6 +90,25 @@ preservation and recoverable creation failures. A separate32-iteration test
 races owner destruction against worker-thread context release. Transport checks exercise authentication/schema
 mismatch, length/output bounds, invalid pointer commands, interrupted uploads
 and subsequent healthy connections.
+
+The native bridge disables automatic per-call GL error polling by default:
+each poll is a synchronous guest/host roundtrip and defeats command batching.
+Explicit caller glGetError continues to query the native context. Use
+`--eagl-check-every-call` to test the optional diagnostic policy; the runner
+checks the bridge actually selected the requested mode. Errors inspected by
+bridge diagnostics are saved per context and returned to callers exactly once.
+The ordinary Mesa bridge retains its existing diagnostic policy, with the same
+error-preservation fix. Both bridges normalize Apple's older HALF_FLOAT_OES
+token to HALF_FLOAT for their GLES3 contexts, including IOSurface uploads.
+Apple documents the token/format differences in its
+[GLES3 migration guide](https://developer.apple.com/library/archive/documentation/3DDrawing/Conceptual/OpenGLES_ProgrammingGuide/AdoptingOpenGLES3/AdoptingOpenGLES3.html).
+
+Add `--guest-uid 501` to run the temporary diagnostics with the compositor's
+mobile identity. A separate launcher drops supplementary groups, group and
+user IDs before exec; each diagnostic must report its actual identity. Only
+the private diagnostic child directory changes ownership, including its0600
+token. The launcher stays root-owned in a root-owned parent directory.
+The default root test alone does not establish compositor permission behavior.
 
 ## Integration work remaining
 

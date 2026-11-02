@@ -81,6 +81,8 @@ cases = [
     ('invalid shader string length', record(0x10002, struct.pack('<QII', 1, 1, 0xffffffff)), 0, 1, None, True),
     ('unbound guest vertex pointer', record(0x10005, struct.pack('<6Q', 0, 2, 0x1406, 0, 0, 0x1234)), 0, 1, None, True),
     ('undersized pixel reply', record(0x1000f, struct.pack('<6Q', 0, 0, 8, 8, 0x1908, 0x1401)), 1, 1, None, True),
+    ('half-float image with byte-sized blob', record(0x1000d, struct.pack('<9Q', 0x0de1, 0, 0x881a, 4, 4, 0, 0x1908, 0x140b, 1) + bytes(64)), 0, 1, None, True),
+    ('packed RGB type with RGBA format', record(0x1000d, struct.pack('<9Q', 0x0de1, 0, 0x1908, 4, 4, 0, 0x1908, 0x8363, 1) + bytes(32)), 0, 1, None, True),
     ('oversized active uniform name', record(0x1001e, struct.pack('<3Q', 0, 0, 65537)), 16, 1, None, True),
     ('oversized attached shader list', record(0x1001d, struct.pack('<2Q', 0, 4097)), 16, 1, None, True),
     ('truncated compressed texture', record(0x10020, struct.pack('<8Q', 0x0de1, 0, 0x9274, 4, 4, 0, 8, 1) + bytes(7)), 0, 1, None, True),

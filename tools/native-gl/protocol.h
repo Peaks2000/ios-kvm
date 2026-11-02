@@ -8,7 +8,7 @@
 #error "native GL wire encoding requires a little-endian peer"
 #endif
 #define NG_MAGIC UINT32_C(0x4e474c33)
-#define NG_VERSION 5
+#define NG_VERSION 6
 #define NG_FEATURE_SHARED_READ UINT32_C(1)
 struct ng_ack {
   uint32_t magic, features;

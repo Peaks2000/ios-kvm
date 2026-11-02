@@ -212,8 +212,8 @@ const GLubyte *glGetStringi(GLenum pname, GLuint index) {
 static size_t ng_pixel_layout(int pack, GLsizei width, GLsizei height,
                               GLenum format, GLenum type, size_t *stride,
                               size_t *skip) {
-  if (width < 0 || height < 0 || width > 4096 || height > 4096 ||
-      (format != GL_RGBA && format != NG_BGRA) || type != GL_UNSIGNED_BYTE)
+  size_t pixel = ng_pixel_size(format, type);
+  if (width < 0 || height < 0 || width > 4096 || height > 4096 || !pixel)
     ng_failure("pixel format/size not implemented");
   struct ng_pixel_store state = ng_pixel_store_get(pack);
   GLint alignment = state.alignment, row = state.row, rows = state.rows,
@@ -225,24 +225,24 @@ static size_t ng_pixel_layout(int pack, GLsizei width, GLsizei height,
       pixels > 65536)
     ng_failure("pixel layout");
   *stride =
-      (((size_t)(row ? row : width) * 4 + alignment - 1) / (size_t)alignment) *
+      (((size_t)(row ? row : width) * pixel + alignment - 1) / (size_t)alignment) *
       (size_t)alignment;
-  *skip = (size_t)rows * *stride + (size_t)pixels * 4;
-  size_t bytes = (size_t)width * height * 4;
+  *skip = (size_t)rows * *stride + (size_t)pixels * pixel;
+  size_t bytes = (size_t)width * height * pixel;
   if (bytes > NG_LIMIT)
     ng_failure("pixel byte limit");
   return bytes;
 }
-static uint8_t *ng_pack(const void *data, GLsizei width, GLsizei height,
+static uint8_t *ng_pack(const void *data, GLsizei height,
                         size_t stride, size_t skip, size_t bytes) {
   uint8_t *p = malloc(bytes ? bytes : 1);
   if (!p)
     ng_failure("pixel allocation");
   if (bytes)
     for (GLsizei y = 0; y < height; y++)
-      memcpy(p + (size_t)y * width * 4,
+      memcpy(p + (size_t)y * (bytes / height),
              (const uint8_t *)data + skip + (size_t)y * stride,
-             (size_t)width * 4);
+             bytes / height);
   return p;
 }
 void glTexImage2D(GLenum target, GLint level, GLint internal, GLsizei width,
@@ -251,7 +251,7 @@ void glTexImage2D(GLenum target, GLint level, GLint internal, GLsizei width,
   size_t stride, skip,
       bytes = ng_pixel_layout(0, width, height, format, type, &stride, &skip);
   uint8_t *p =
-      pixels ? ng_pack(pixels, width, height, stride, skip, bytes) : NULL;
+      pixels ? ng_pack(pixels, height, stride, skip, bytes) : NULL;
   uint64_t a[] = {target,
                   (uint64_t)level,
                   (uint64_t)internal,
@@ -271,7 +271,7 @@ void glTexSubImage2D(GLenum target, GLint level, GLint x, GLint y,
       bytes = ng_pixel_layout(0, width, height, format, type, &stride, &skip);
   if (!pixels && bytes)
     ng_failure("null upload");
-  uint8_t *p = ng_pack(pixels, width, height, stride, skip, bytes);
+  uint8_t *p = ng_pack(pixels, height, stride, skip, bytes);
   uint64_t a[] = {target,          (uint64_t)level,  (uint64_t)x, (uint64_t)y,
                   (uint64_t)width, (uint64_t)height, format,      type};
   ng_blob(NG_TEX_SUB_IMAGE, a, 8, p, bytes, NULL, 0, 0);
@@ -285,17 +285,21 @@ void glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height,
       bytes = ng_pixel_layout(1, width, height, format, type, &stride, &skip);
   if (!pixels && bytes)
     ng_failure("null readback");
-  uint8_t *p = malloc(bytes ? bytes : 1);
+  if (bytes > NG_LIMIT - 4)
+    ng_failure("pixel reply limit");
+  uint8_t *p = malloc(bytes + 4);
   if (!p)
     ng_failure("pixel allocation");
   uint64_t a[] = {(uint64_t)x,      (uint64_t)y, (uint64_t)width,
                   (uint64_t)height, format,      type};
-  if (ng_blob(NG_READ_PIXELS, a, 6, NULL, 0, p, bytes, 1) != bytes)
+  if (ng_blob(NG_READ_PIXELS, a, 6, NULL, 0, p, bytes + 4, 1) != bytes + 4)
     ng_failure("pixel reply");
-  if (bytes)
+  int32_t failed;
+  memcpy(&failed, p, 4);
+  if (!failed && bytes)
     for (GLsizei row = 0; row < height; row++)
       memcpy((uint8_t *)pixels + skip + (size_t)row * stride,
-             p + (size_t)row * width * 4, (size_t)width * 4);
+             p + 4 + (size_t)row * (bytes / height), bytes / height);
   free(p);
 }
 static void ng_uniform(GLint location, GLsizei count, unsigned components,

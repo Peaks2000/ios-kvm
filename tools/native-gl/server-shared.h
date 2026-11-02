@@ -103,7 +103,8 @@ static int ng_shared_read(const uint8_t *data, size_t size, void *output,
     if (sorted[i].physical < sorted[i - 1].physical + sorted[i - 1].length)
       goto complete;
   size_t tight = 0;
-  if (ng_pixels(a[2], a[3], a[4], a[5], &tight) || !a[2] || !a[3] ||
+  if ((a[4] != GL_RGBA && a[4] != NG_BGRA) || a[5] != GL_UNSIGNED_BYTE ||
+      ng_pixels(a[2], a[3], a[4], a[5], &tight) || !a[2] || !a[3] ||
       a[6] < a[2] * 4 || a[6] > (64u << 20) || (a[6] & 3) ||
       a[6] * (a[3] - 1) + a[2] * 4 != a[7])
     goto complete;

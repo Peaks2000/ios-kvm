@@ -18,10 +18,14 @@ p.add_argument('--output', required=True, type=Path, help='New directory for tes
 p.add_argument('--port', type=int, default=6733)
 p.add_argument('--server', type=Path, help='Use a separate instrumented native server binary')
 p.add_argument('--eagl', action='store_true', help='Also run the isolated EAGL macro ABI diagnostic')
+p.add_argument('--eagl-check-every-call', action='store_true', help='Enable native EAGL per-call error diagnostics and check error preservation')
+p.add_argument('--guest-uid', type=int, choices=(0, 501), default=0, help='Run temporary diagnostics as root or the compositor mobile identity')
 p.add_argument('--shared-ram', action='store_true', help='Opt into retained IOSurface readback through this VM RAM')
 p.add_argument('--benchmark', action='store_true', help='Measure copied/shared readback ABBA at two phone resolutions')
 p.add_argument('--benchmark-pixel-state', action='store_true', help='Benchmark shared reads with state queries versus context shadowing')
 a = p.parse_args()
+if a.eagl_check_every_call:
+    a.eagl = True
 if a.benchmark_pixel_state:
     a.benchmark = True
 if a.benchmark and not a.shared_ram:
@@ -63,10 +67,12 @@ if a.shared_ram:
 ssh = ['bash', str(root / 'tools/ssh.sh'), '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10']
 server = None
 guest_path = None
+deployment_root = None
 receipt = {'scope': 'Native GLES API correctness and optional readback benchmark; not desktop integration or FPS',
            'profile': str(a.profile.resolve()), 'selected': selected, 'port': a.port,
            'shared_ram_requested': a.shared_ram, 'benchmark_requested': a.benchmark,
-           'pixel_state_benchmark_requested': a.benchmark_pixel_state}
+           'pixel_state_benchmark_requested': a.benchmark_pixel_state,
+           'eagl_per_call_checks_requested': a.eagl_check_every_call, 'guest_uid_requested': a.guest_uid}
 error = None
 with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local') as directory, \
         (a.output / 'server.log').open('w') as server_log, \
@@ -97,8 +103,11 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
             subprocess.run(['python3', str(root / 'tools/native-gl/test-protocol.py'),
                             '--generated', str(local), '--token', str(token), '--port', str(a.port)],
                            cwd=root, stdout=log, stderr=subprocess.STDOUT, timeout=45, check=True)
-        guest_path = '/var/tmp/ios-kvm-native-api-' + temporary.name
-        command = f'mkdir -p {shlex.quote(guest_path)} && chmod 700 {shlex.quote(guest_path)}'
+        deployment_root = '/var/tmp/ios-kvm-native-api-' + temporary.name
+        guest_path = deployment_root + '/mobile' if a.guest_uid == 501 else deployment_root
+        command = f'mkdir -m 700 {shlex.quote(deployment_root)}'
+        if a.guest_uid == 501:
+            command += f' && chmod 711 {shlex.quote(deployment_root)} && mkdir -m 700 {shlex.quote(guest_path)}'
         subprocess.run([*ssh, command], cwd=root, stdout=deploy_log, stderr=deploy_log, timeout=30, check=True)
         deploy = [(local / 'libios-kvm-native-gl.dylib', 'libios-kvm-native-gl.dylib', '600'),
                                    (local / 'guest-check', 'guest-check', '700'),
@@ -107,21 +116,34 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
         if a.eagl:
             deploy += [(local / 'eagl-check', 'eagl-check', '700'),
                        (local / 'eagl-coverage/libhakios-native-eagl.dylib', 'libhakios-native-eagl.dylib', '600')]
+        if a.guest_uid == 501:
+            deploy += [(local / 'guest-exec', 'guest-exec', '700')]
         for source, name, mode in deploy:
-            path = shlex.quote(guest_path + '/' + name)
+            # The identity launcher stays root-owned in a root-owned directory.
+            # Only its diagnostic child tree is writable by the target user.
+            destination = deployment_root if name == 'guest-exec' else guest_path
+            path = shlex.quote(destination + '/' + name)
             command = f'umask 077; cat > {path} && chmod {mode} {path}'
             subprocess.run([*ssh, command], input=source.read_bytes(), cwd=root,
                            stdout=deploy_log, stderr=deploy_log, timeout=30, check=True)
+        launch = ''
+        if a.guest_uid == 501:
+            subprocess.run([*ssh, '/var/jb/usr/bin/chown -R 501:501 ' + shlex.quote(guest_path)],
+                           cwd=root, stdout=deploy_log, stderr=deploy_log, timeout=20, check=True)
+            launch = shlex.quote(deployment_root + '/guest-exec') + ' 501 '
         command = (f'export IOS_KVM_NATIVE_GL_HOST=10.0.2.2 IOS_KVM_NATIVE_GL_PORT={a.port} '
                    f'IOS_KVM_NATIVE_GL_TOKEN_FILE={shlex.quote(guest_path + "/token")} '
                    f'IOS_KVM_NATIVE_SHARED={int(a.shared_ram)} IOS_KVM_NATIVE_BENCH={int(a.benchmark)} '
-                   f'IOS_KVM_NATIVE_BENCH_PIXEL_STATE={int(a.benchmark_pixel_state)}; '
-                   f'{shlex.quote(guest_path + "/guest-check")}')
+                   f'IOS_KVM_NATIVE_BENCH_PIXEL_STATE={int(a.benchmark_pixel_state)} '
+                   f'IOS_KVM_NATIVE_GL_CHECK_EVERY_CALL={int(a.eagl_check_every_call)}; '
+                   f'{launch}{shlex.quote(guest_path + "/guest-check")}')
         result = subprocess.run([*ssh, command], cwd=root, capture_output=True, text=True, timeout=180 if a.benchmark else 45)
         output = result.stdout + result.stderr
         (a.output / 'guest.log').write_text(output)
         if result.returncode or 'Native GL general API check PASSED' not in output:
             raise RuntimeError('guest correctness check failed; inspect guest.log')
+        if a.guest_uid == 501 and 'Native guest identity: uid=501 gid=501' not in output:
+            raise RuntimeError('guest diagnostic identity was not verified')
         if a.shared_ram and 'Native shared IOSurface check PASSED' not in output:
             raise RuntimeError('Retained shared IOSurface check did not pass')
         if a.benchmark:
@@ -145,6 +167,8 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
         (a.output / 'context-race.log').write_text(race_output)
         if race.returncode or 'Native GL context teardown race check PASSED' not in race_output:
             raise RuntimeError('guest context teardown race check failed')
+        if a.guest_uid == 501 and 'Native guest identity: uid=501 gid=501' not in race_output:
+            raise RuntimeError('guest race identity was not verified')
         if a.eagl:
             eagl_command = command.replace(shlex.quote(guest_path + '/guest-check'),
                                           shlex.quote(guest_path + '/eagl-check') + ' ' +
@@ -154,8 +178,13 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
             (a.output / 'eagl.log').write_text(eagl_output)
             if eagl.returncode or 'Native EAGL macro ABI check PASSED' not in eagl_output:
                 raise RuntimeError('isolated EAGL macro ABI check failed; inspect eagl.log')
+            if a.guest_uid == 501 and 'Native guest identity: uid=501 gid=501' not in eagl_output:
+                raise RuntimeError('guest EAGL identity was not verified')
             if a.shared_ram and 'Native EAGL shared IOSurface check PASSED' not in eagl_output:
                 raise RuntimeError('isolated EAGL shared IOSurface check did not pass')
+            policy = 'enabled' if a.eagl_check_every_call else 'disabled'
+            if f'native per-call GL error checks {policy}' not in eagl_output:
+                raise RuntimeError('isolated EAGL error-check policy did not match request')
             actual = next(line.split(': ', 1)[1] for line in eagl_output.splitlines()
                           if line.startswith('Native EAGL macro renderer: '))
             if actual.strip() != renderer.strip():
@@ -166,6 +195,8 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
                        hashes={name: hashlib.sha256((local / name).read_bytes()).hexdigest()
                                for name in ['libios-kvm-native-gl.dylib', 'guest-check', 'context-race-check']})
         receipt['hashes']['server'] = hashlib.sha256(server_binary.read_bytes()).hexdigest()
+        if a.guest_uid == 501:
+            receipt['hashes']['guest-exec'] = hashlib.sha256((local / 'guest-exec').read_bytes()).hexdigest()
         if a.eagl:
             for name in ['eagl-check', 'eagl-coverage/libhakios-native-eagl.dylib']:
                 receipt['hashes'][name] = hashlib.sha256((local / name).read_bytes()).hexdigest()
@@ -180,8 +211,8 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
             except subprocess.TimeoutExpired:
                 server.kill()
                 server.wait(timeout=5)
-        if guest_path:
-            command = 'rm -rf -- ' + shlex.quote(guest_path)
+        if deployment_root:
+            command = 'rm -rf -- ' + shlex.quote(deployment_root)
             try:
                 r = subprocess.run([*ssh, command], cwd=root, stdout=deploy_log, stderr=deploy_log, timeout=20)
                 receipt['guest_temp_removed'] = r.returncode == 0

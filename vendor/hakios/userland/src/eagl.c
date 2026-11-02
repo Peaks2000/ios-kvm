@@ -317,6 +317,8 @@ struct eagl {
 	uint64_t upload_bytes, began, attaching, flushing;
 	/* everything so far */
 	unsigned frames, shaders, programs, errors, shared, refused;
+	uint32_t pending_errors;
+	GLenum pending_error_other;
 	uint64_t all_calls, all_draws, all_triangles, readback_us, wait_us, attach_us, flush_us, frame_us;
 	unsigned most_calls, most_triangles;
 	const char *sources[256];       /* the text of the shaders being made, by name (modulo this) */
@@ -344,7 +346,11 @@ static struct group_texture *group_of(struct eagl *e, GLuint texture);
 static __thread struct eagl *current;
 static struct eagl *contexts[8];
 static uint32_t slot_calls[SLOTS];
+#ifdef IOS_KVM_NATIVE_EAGL
+static int check_errors;                /* native calls are batched; per-call queries defeat that */
+#else
 static int check_errors = 1;            /* ask the library for an error after every call (the first frames) */
+#endif
 static int share_surfaces = 1;          /* boot-arg glcopy=1: 0 */
 /*
  * A frame is not drawn into its surface's memory but into a texture of the library's own, and the
@@ -407,11 +413,22 @@ eagl_enter(struct eagl *e, unsigned offset)
 }
 
 static void
+eagl_error_save(struct eagl *e, GLenum error)
+{
+	if (error >= 0x500 && error < 0x520) {
+		e->pending_errors |= 1U << (error - 0x500);
+	} else if (error != 0) {
+		e->pending_error_other = error;
+	}
+}
+
+static void
 eagl_leave(struct eagl *e, unsigned offset)
 {
 	GLenum error;
 
 	if (check_errors && offset != 0x338 && (error = glGetError()) != 0) {
+		eagl_error_save(e, error);        /* diagnostics must not consume the caller's error */
 		if (e->errors++ < 60) {
 			say("hakios-gl: %s: error %#x\n", eagl_slot_name(offset), error);
 		}
@@ -580,6 +597,13 @@ internal_format(GLenum internal, GLenum format)
 	return format == GL_BGRA && internal == GL_RGBA ? GL_BGRA : internal;
 }
 
+/* Apple callers retain the ES2 extension token; these contexts are ES3. */
+static GLenum
+pixel_type(GLenum type)
+{
+	return type == 0x8d61 ? 0x140b : type;       /* HALF_FLOAT_OES -> HALF_FLOAT */
+}
+
 static unsigned
 bytes_a_pixel(GLenum format, GLenum type)
 {
@@ -724,7 +748,7 @@ surface_to_texture(struct eagl *e, struct image *image)
 	glPixelStorei(GL_UNPACK_ROW_LENGTH, (GLint)(row / pixel));
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	glTexImage2D(image->to, 0, (GLint)internal_format(image->internal, image->format), image->width, image->height, 0,
-	    image->format, image->type, base);
+	    image->format, pixel_type(image->type), base);
 	glPixelStorei(GL_UNPACK_ROW_LENGTH, row_length);
 	glPixelStorei(GL_UNPACK_ALIGNMENT, alignment);
 	if (trace_placing) {
@@ -3368,6 +3392,30 @@ my_glDeleteTextures(void *context, GLsizei n, const GLuint *textures)
 	EAGL_LEAVE(e, 0x1e0);
 }
 
+static GLenum
+my_glGetError(void *context)
+{
+	struct eagl *e = context;
+	GLenum error;
+
+	EAGL_ENTER(e, 0x338);
+	error = glGetError();
+	if (error >= 0x500 && error < 0x520) {
+		e->pending_errors &= ~(1U << (error - 0x500));
+	} else if (error != 0) {
+		if (error == e->pending_error_other) e->pending_error_other = 0;
+	} else if (e->pending_errors != 0) {
+		unsigned bit = (unsigned)__builtin_ctz(e->pending_errors);
+		e->pending_errors &= ~(1U << bit);
+		error = 0x500 + bit;
+	} else {
+		error = e->pending_error_other;
+		e->pending_error_other = 0;
+	}
+	EAGL_LEAVE(e, 0x338);
+	return error;
+}
+
 static const GLubyte *
 my_glGetString(void *context, GLenum name)
 {
@@ -3451,7 +3499,7 @@ my_glTexImage2D(void *context, GLenum target, GLint level, GLint internal, GLsiz
 		group_forget(e, e->bound[e->unit]);
 	}
 	uint64_t began = slow_calls_us != 0 ? now_us() : 0;
-	glTexImage2D(target, level, (GLint)internal_format((GLenum)internal, format), width, height, border, format, type, pixels);
+	glTexImage2D(target, level, (GLint)internal_format((GLenum)internal, format), width, height, border, format, pixel_type(type), pixels);
 	if (began != 0 && now_us() - began >= slow_calls_us) {
 		/* (with glslow=US: which pictures take long to hand over) */
 		say("tl: slow-tex %dx%d level %d format %#x type %#x%s %llu at %llu\n", width, height, level, format, type,
@@ -3477,7 +3525,7 @@ my_glTexSubImage2D(void *context, GLenum target, GLint level, GLint x, GLint y, 
 		group_read(e, e->bound[e->unit]);
 		group_forget(e, e->bound[e->unit]);
 	}
-	glTexSubImage2D(target, level, x, y, width, height, format, type, pixels);
+	glTexSubImage2D(target, level, x, y, width, height, format, pixel_type(type), pixels);
 	EAGL_LEAVE(e, 0x9a0);
 }
 
@@ -4242,6 +4290,12 @@ install(void)
 	char arguments[1024] = "";
 	size_t size = sizeof(arguments) - 1;
 	const char *argument;
+
+#ifdef IOS_KVM_NATIVE_EAGL
+	const char *per_call = getenv("IOS_KVM_NATIVE_GL_CHECK_EVERY_CALL");
+	if (per_call != NULL) check_errors = strcmp(per_call, "1") == 0;
+	say("hakios-gl: native per-call GL error checks %s\n", check_errors ? "enabled" : "disabled");
+#endif
 
 	/* the kernel's boot-args are where a run is told things */
 	if (sysctlbyname("kern.bootargs", arguments, &size, NULL, 0) == 0) {

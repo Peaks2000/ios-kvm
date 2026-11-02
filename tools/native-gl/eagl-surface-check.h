@@ -85,6 +85,7 @@ static void shared_eagl_surface(EAGLContext *context, void *library) {
           "EAGL flush uses shared reads; Finish stays copied");
     glDeleteFramebuffers(1, &fbo);
     glDeleteTextures(1, &texture);
+    glUseProgram(0);
     glDeleteProgram(program);
     glDeleteShader(vs);
     glDeleteShader(fs);

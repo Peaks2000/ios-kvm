@@ -4,6 +4,7 @@
 #include "context.h"
 #include "io.h"
 #include "protocol.h"
+#include "pixel-format.h"
 #include "readback.h"
 #include "schema.h"
 #include <GLES3/gl31.h>

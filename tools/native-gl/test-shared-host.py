@@ -76,13 +76,13 @@ with tempfile.TemporaryDirectory(prefix='native-gl-shared-host-') as directory:
                 return s
 
             def request(*, segments=None, completion=cell, width=1, span=4, stride=4,
-                        disconnect=False, invalid_cell=False, expected=0):
+                        disconnect=False, invalid_cell=False, expected=0, fmt=0x80e1, dtype=0x1401):
                 if segments is None:
                     segments = [(destination + 32, 2), (destination, 2)]
                 ram[:] = b'\xa5' * len(ram)
                 ram[64:72] = bytes(8)
                 seq = 37
-                args = [0, 0, width, 1, 0x80e1, 0x1401, stride, span, len(segments), completion, seq]
+                args = [0, 0, width, 1, fmt, dtype, stride, span, len(segments), completion, seq]
                 commands = scalar('glClearColor', floatbits(1), 0, 0, floatbits(1))
                 commands += scalar('glClear', 0x4000)
                 commands += record(0x10021, struct.pack('<11Q', *args) +
@@ -117,6 +117,9 @@ with tempfile.TemporaryDirectory(prefix='native-gl-shared-host-') as directory:
             request(disconnect=True)
             request(width=4097, expected=-22)
             request(span=5, expected=-22)
+            request(fmt=0x1908, dtype=0x140b, expected=-22)
+            request(fmt=0x1908, dtype=0x1406, expected=-22)
+            request(fmt=0x190a, expected=-22)
             request(segments=[(destination, 3), (destination + 2, 1)], expected=-22)
             request(segments=[(base + (2 << 20) - 1, 4)], expected=-22)
             request(segments=[(base - 1, 4)], expected=-22)

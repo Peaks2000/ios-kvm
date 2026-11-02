@@ -4,6 +4,7 @@
 #define _GNU_SOURCE 1
 #include "io.h"
 #include "protocol.h"
+#include "pixel-format.h"
 #include "schema.h"
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
