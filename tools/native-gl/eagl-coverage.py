@@ -18,6 +18,7 @@ p.add_argument('--require-ready', action='store_true')
 a = p.parse_args()
 out = a.output.resolve()
 out.mkdir(parents=True, exist_ok=True)
+(out / 'libhakios-native-eagl.dylib').unlink(missing_ok=True)
 src = root / 'vendor/hakios/userland/src'
 library = root / '.local/native-gl-api/libios-kvm-native-gl.dylib'
 registry = root / '.local/mesa-25.0.7/src/mapi/glapi/registry/gl.xml'
@@ -57,8 +58,18 @@ subprocess.run([*clang, '-fuse-ld=lld', '-Wall', '-Wextra', '-Werror', '-I', str
                 '-install_name', '@rpath/libeagl-native-adapter.dylib',
                 str(root / 'tools/native-gl/eagl-adapter.c'), str(library),
                 '-o', str(out / 'libeagl-native-adapter.dylib')], check=True)
+bridge_linked = False
+if not undefined:
+    subprocess.run([*clang, '-fuse-ld=lld', '-I', str(src), '-I', str(root / 'tools/native-gl'),
+                    '-dynamiclib', '-install_name', '@rpath/libhakios-native-eagl.dylib',
+                    '-Wl,-rpath,@loader_path', '-framework', 'CoreFoundation', '-framework', 'IOKit',
+                    '-framework', 'IOSurface', '-lobjc', str(out / 'eagl.o'),
+                    str(root / 'tools/native-gl/eagl-adapter.c'), str(library),
+                    '-o', str(out / 'libhakios-native-eagl.dylib')], check=True)
+    bridge_linked = True
 report = {'native_exports': len(exports), 'direct_source_missing': missing,
           'actual_undefined_gl_symbols': undefined, 'dispatch_diagnostics': result.stderr.strip(),
+          'bridge_linked': bridge_linked,
           'scope': 'Compile/link API coverage only; not a desktop compatibility check'}
 (out / 'coverage.json').write_text(json.dumps(report, indent=2) + '\n')
 print(json.dumps(report, indent=2))

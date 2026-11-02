@@ -57,6 +57,8 @@ for opcode, (name, (ret, params)) in enumerate(sorted(prototypes.items()), 1):
     server.append(f' if(size!={len(params)*8}) return -1;')
     for index, (ctype, pname) in enumerate(params):
         server.append(f' {ctype} {pname}; memcpy(&{pname},data+{index*8},sizeof({pname}));')
+    if name in ('glLinkProgram', 'glDeleteProgram'):
+        server.append(' ng_uniform_forget(program);')
     call = f'{name}({", ".join(n for _,n in params)})'
     if ret == 'void':
         server.append(f' {call}; return 0;')

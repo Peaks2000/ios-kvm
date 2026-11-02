@@ -3818,6 +3818,31 @@ my_glCreateShader(void *context, GLenum type)
  * CoreAnimation does not ask whether its shaders compiled. Here it is asked, and what the
  * compiler said is written down with the shader's text.
  */
+/* Find a leading version directive without mistaking comments for shader code. */
+static char *
+shader_version(char *text, unsigned long *version)
+{
+	char *at = text;
+	for (;;) {
+		at += strspn(at, " \t\r\n");
+		if (strncmp(at, "//", 2) == 0) { at += strcspn(at, "\n"); continue; }
+		if (strncmp(at, "/*", 2) == 0) {
+			char *end = strstr(at + 2, "*/");
+			if (end == NULL) return NULL;
+			at = end + 2;
+			continue;
+		}
+		break;
+	}
+	if (*at != '#') return NULL;
+	char *word = at + 1;
+	word += strspn(word, " \t");
+	if (strncmp(word, "version", 7) != 0 || strspn(word + 7, " \t") == 0) return NULL;
+	char *number = word + 7, *end;
+	*version = strtoul(number, &end, 10);
+	return end != number ? at : NULL;
+}
+
 static void
 my_glShaderSource(void *context, GLuint shader, GLsizei count, const GLchar *const *strings, const GLint *lengths)
 {
@@ -3834,11 +3859,25 @@ my_glShaderSource(void *context, GLuint shader, GLsizei count, const GLchar *con
 	}
 	if ((text = calloc(1, 2 * size + 64)) == NULL) {
 		glShaderSource(shader, count, strings, lengths);
+		EAGL_LEAVE(e, 0x12a0);
 		return;
 	}
 	for (GLsizei i = 0; i < count; i++) {
 		strncat(text, strings[i], lengths != NULL && lengths[i] >= 0 ? (size_t)lengths[i] : strlen(strings[i]));
 	}
+	unsigned long version = 0;
+	char *directive = shader_version(text, &version);
+	if (directive != NULL && version != 100) {
+		/* Already-versioned modern shaders own their inputs/outputs and precision.
+		 * Keep invalid versions intact too, so the compiler reports their error. */
+		free((void *)e->sources[shader % 256]);
+		e->sources[shader % 256] = text;
+		const GLchar *source = text;
+		glShaderSource(shader, 1, &source, NULL);
+		EAGL_LEAVE(e, 0x12a0);
+		return;
+	}
+	if (directive != NULL) directive[0] = directive[1] = '/';
 	/* "#extension" lines must stay ahead of everything that is not the preprocessor's: they move to the top */
 	head = text + size;
 	strcpy(head, parts[0]);

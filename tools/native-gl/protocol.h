@@ -8,7 +8,7 @@
 #error "native GL wire encoding requires a little-endian peer"
 #endif
 #define NG_MAGIC UINT32_C(0x4e474c33)
-#define NG_VERSION 3
+#define NG_VERSION 4
 #define NG_BGRA UINT32_C(0x80e1)
 #define NG_LIMIT (16u << 20)
 #define NG_TOKEN_BYTES 32
@@ -54,7 +54,16 @@ enum {
   NG_CLIENT_WAIT_SYNC,
   NG_WAIT_SYNC,
   NG_IS_SYNC,
-  NG_GET_SYNC
+  NG_GET_SYNC,
+  NG_GET_FLOAT,
+  NG_GET_FRAMEBUFFER,
+  NG_GET_TEX_LEVEL,
+  NG_GET_TEX_PARAMETER,
+  NG_GET_VERTEX_ATTRIBUTE,
+  NG_GET_ATTACHED,
+  NG_GET_ACTIVE_UNIFORM,
+  NG_GET_UNIFORM,
+  NG_COMPRESSED_IMAGE
 };
 /* No process pointers or function addresses are accepted on the wire. */
 #endif

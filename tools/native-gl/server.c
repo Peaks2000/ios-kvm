@@ -7,7 +7,7 @@
 #include "schema.h"
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
-#include <GLES3/gl3.h>
+#include <GLES3/gl31.h>
 #include <arpa/inet.h>
 #include <poll.h>
 #include <pthread.h>
@@ -30,12 +30,15 @@ static int ng_output(void *output, size_t capacity, size_t *used,
   return 0;
 }
 #include "server-pointers.h"
+#include "server-query.h"
 #include "server-sync.h"
 static int ng_dispatch(uint32_t opcode, const uint8_t *data, size_t size,
                        void *output, size_t capacity, size_t *used) {
   switch (opcode) {
 #include "server-scalars.h"
   default:
+    if (opcode >= NG_GET_FLOAT)
+      return ng_query(opcode, data, size, output, capacity, used);
     if (opcode >= NG_FENCE_SYNC)
       return ng_sync_dispatch(opcode, data, size, output, capacity, used);
     return ng_pointer(opcode, data, size, output, capacity, used);

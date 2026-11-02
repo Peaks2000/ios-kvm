@@ -17,6 +17,7 @@ p.add_argument('--profile', required=True, type=Path, help='Existing gpu_host.py
 p.add_argument('--output', required=True, type=Path, help='New directory for test receipts')
 p.add_argument('--port', type=int, default=6733)
 p.add_argument('--server', type=Path, help='Use a separate instrumented native server binary')
+p.add_argument('--eagl', action='store_true', help='Also run the isolated EAGL macro ABI diagnostic')
 a = p.parse_args()
 if not 1024 <= a.port <= 65535:
     p.error('port must be between 1024 and 65535')
@@ -30,6 +31,8 @@ a.output.mkdir(parents=True, exist_ok=False)
 with socket.socket() as probe:
     probe.bind(('127.0.0.1', a.port))
 subprocess.run(['python3', str(root / 'tools/build-native-gl.py')], cwd=root, check=True)
+if a.eagl:
+    subprocess.run(['python3', str(root / 'tools/native-gl/build-eagl-check.py')], cwd=root, check=True)
 local = root / '.local/native-gl-api'
 server_binary = a.server.resolve() if a.server else local / 'server'
 ssh = ['bash', str(root / 'tools/ssh.sh'), '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10']
@@ -70,10 +73,14 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
         guest_path = '/var/tmp/ios-kvm-native-api-' + temporary.name
         command = f'mkdir -p {shlex.quote(guest_path)} && chmod 700 {shlex.quote(guest_path)}'
         subprocess.run([*ssh, command], cwd=root, stdout=deploy_log, stderr=deploy_log, timeout=30, check=True)
-        for source, name, mode in [(local / 'libios-kvm-native-gl.dylib', 'libios-kvm-native-gl.dylib', '600'),
+        deploy = [(local / 'libios-kvm-native-gl.dylib', 'libios-kvm-native-gl.dylib', '600'),
                                    (local / 'guest-check', 'guest-check', '700'),
                                    (local / 'context-race-check', 'context-race-check', '700'),
-                                   (token, 'token', '600')]:
+                                   (token, 'token', '600')]
+        if a.eagl:
+            deploy += [(local / 'eagl-check', 'eagl-check', '700'),
+                       (local / 'eagl-coverage/libhakios-native-eagl.dylib', 'libhakios-native-eagl.dylib', '600')]
+        for source, name, mode in deploy:
             path = shlex.quote(guest_path + '/' + name)
             command = f'umask 077; cat > {path} && chmod {mode} {path}'
             subprocess.run([*ssh, command], input=source.read_bytes(), cwd=root,
@@ -99,11 +106,28 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
         (a.output / 'context-race.log').write_text(race_output)
         if race.returncode or 'Native GL context teardown race check PASSED' not in race_output:
             raise RuntimeError('guest context teardown race check failed')
+        if a.eagl:
+            eagl_command = command.replace(shlex.quote(guest_path + '/guest-check'),
+                                          shlex.quote(guest_path + '/eagl-check') + ' ' +
+                                          shlex.quote(guest_path + '/libhakios-native-eagl.dylib'))
+            eagl = subprocess.run([*ssh, eagl_command], cwd=root, capture_output=True, text=True, timeout=45)
+            eagl_output = eagl.stdout + eagl.stderr
+            (a.output / 'eagl.log').write_text(eagl_output)
+            if eagl.returncode or 'Native EAGL macro ABI check PASSED' not in eagl_output:
+                raise RuntimeError('isolated EAGL macro ABI check failed; inspect eagl.log')
+            actual = next(line.split(': ', 1)[1] for line in eagl_output.splitlines()
+                          if line.startswith('Native EAGL macro renderer: '))
+            if actual.strip() != renderer.strip():
+                raise RuntimeError('EAGL macro renderer differs from proxy renderer')
+            receipt.update(eagl_macro_passed=True, eagl_renderer=actual)
         receipt.update(context_race_passed=True)
         receipt.update(passed=True, actual_renderer=renderer,
                        hashes={name: hashlib.sha256((local / name).read_bytes()).hexdigest()
                                for name in ['libios-kvm-native-gl.dylib', 'guest-check', 'context-race-check']})
         receipt['hashes']['server'] = hashlib.sha256(server_binary.read_bytes()).hexdigest()
+        if a.eagl:
+            for name in ['eagl-check', 'eagl-coverage/libhakios-native-eagl.dylib']:
+                receipt['hashes'][name] = hashlib.sha256((local / name).read_bytes()).hexdigest()
     except Exception as exc:
         receipt.update(passed=False, error=str(exc))
         error = exc

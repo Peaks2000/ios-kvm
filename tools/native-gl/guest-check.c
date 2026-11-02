@@ -3,7 +3,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "context.h"
 #include "protocol.h"
-#include <GLES3/gl3.h>
+#include <GLES3/gl31.h>
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -63,6 +63,7 @@ static GLuint texture(unsigned w, unsigned h) {
                NULL);
   return t;
 }
+#include "query-check.h"
 static void *isolation(void *argument) {
   unsigned color = (unsigned)(uintptr_t)argument;
   GLuint tex = texture(2, 2), fbo;
@@ -257,6 +258,7 @@ int main(void) {
   glUniformMatrix4fv(matrix, 1, GL_FALSE, identity);
   glUniform4fv(tint, 1, white);
   glUniform1i(sampler, 0);
+  query_program(program, vs, fs, matrix, tint, sampler);
   const GLfloat vertices[] = {-1, -1, 0, 0, 1, -1, 1, 0,
                               -1, 1,  0, 1, 1, 1,  1, 1};
   const GLushort indices[] = {0, 1, 2, 2, 1, 3};
@@ -289,6 +291,7 @@ int main(void) {
   require(viewport[2] == W && viewport[3] == H, "vector query");
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, input);
+  query_geometry(output);
   uint8_t source[(H + 2) * INPUT_ROW * 4], pixels[(H + 3) * STRIDE],
       expected[(H + 3) * STRIDE];
   for (unsigned frame = 0; frame < 20; frame++) {
@@ -389,6 +392,7 @@ int main(void) {
   glEnable(0xdeadbeef);
   require(glGetError() == GL_INVALID_ENUM, "GL error preserved");
   require(glGetError() == GL_NO_ERROR, "GL error consumed once");
+  compressed_pixels();
   large_surface(750, 1624, GL_RGBA);
   large_surface(1125, 2436, NG_BGRA);
   pthread_t a, b;

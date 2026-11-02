@@ -80,6 +80,10 @@ cases = [
     ('invalid shader string length', record(0x10002, struct.pack('<QII', 1, 1, 0xffffffff)), 0, 1, None, True),
     ('unbound guest vertex pointer', record(0x10005, struct.pack('<6Q', 0, 2, 0x1406, 0, 0, 0x1234)), 0, 1, None, True),
     ('undersized pixel reply', record(0x1000f, struct.pack('<6Q', 0, 0, 8, 8, 0x1908, 0x1401)), 1, 1, None, True),
+    ('oversized active uniform name', record(0x1001e, struct.pack('<3Q', 0, 0, 65537)), 16, 1, None, True),
+    ('oversized attached shader list', record(0x1001d, struct.pack('<2Q', 0, 4097)), 16, 1, None, True),
+    ('truncated compressed texture', record(0x10020, struct.pack('<8Q', 0x0de1, 0, 0x9274, 4, 4, 0, 8, 1) + bytes(7)), 0, 1, None, True),
+    ('wrong compressed block size', record(0x10020, struct.pack('<8Q', 0x0de1, 0, 0x9274, 4, 4, 0, 1, 1) + bytes(1)), 0, 1, None, True),
 ]
 for label, commands, capacity, seq, declared, reply in cases:
     with authenticated() as s:

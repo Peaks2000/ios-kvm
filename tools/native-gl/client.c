@@ -5,7 +5,7 @@
 #include "io.h"
 #include "protocol.h"
 #include "schema.h"
-#include <GLES3/gl3.h>
+#include <GLES3/gl31.h>
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <stdint.h>
@@ -224,6 +224,7 @@ static void ng_call(uint32_t op, const void *data, size_t size, void *output,
     ng_failure("unexpected output length");
 }
 #include "client-pointers.h"
+#include "client-query.h"
 #include "client-scalars.h"
 #include "client-sync.h"
 /* Diagnostic implicit contexts are released; explicit contexts remain

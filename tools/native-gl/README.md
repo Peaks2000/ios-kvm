@@ -1,8 +1,8 @@
 # Native GLES backend research
 
 This backend moves GLES processing onto the host CPU/GPU. The guest library
-exports 173 GLES entry points without linking guest Mesa. It is experimental
-and is **not selected by `run.sh` or installed into EAGL**.
+exports 183 GLES entry points without linking guest Mesa. It is experimental
+and is **not selected by `run.sh` or installed into the window server**.
 
 Build with `python3 tools/build-native-gl.py`. The developer build requires the
 existing Mesa registry/headers and iOS SDK under `.local`, plus host EGL/GLES
@@ -15,6 +15,13 @@ python3 tools/native-gl/run-check.py \
   --profile .local/gpu-profile-auto.json \
   --output .local/native-gl-api/my-hardware-check
 ```
+
+Add `--eagl` to also build the complete bridge and run a separate-process test
+through EAGLContext methods and the private macro table used by CoreAnimation.
+It tests24 spatial frames using modern, explicit GLSL100 and versionless legacy
+shaders. It does not switch the window server or prove full compositor behavior.
+The bridge preserves modern versioned shaders and converts legacy ones; its
+shader fix also passes the same isolated test on the existing Mesa/VirGL backend.
 
 Use a software profile from `tools/gpu_host.py` to check software fallback.
 Each check needs a new output directory and a free loopback port (`--port`).
@@ -39,7 +46,16 @@ EGL/GLES interfaces alone is not proof that those devices pass.
 - RGBA/BGRA 8-bit texture upload/subimage and readback, preserving row alignment,
   row length, skipped rows/pixels and untouched output padding. BGRA is converted
   on the host, so driver-specific BGRA extensions are not required for transfers.
-- Scalar/vector integer queries and stable context-lifetime GL strings.
+- Integer/float state queries, shader attachment lists, active uniform names,
+  uniform values and texture/vertex/framebuffer metadata. Reflection determines
+  scalar/vector/matrix output size and array element locations; a bounded native
+  cache is invalidated on program link/delete. Texture-level queries currently
+  require native GLES3.1 entry points.
+- Bounded compressed2D uploads with checked block layouts (ETC/EAC, ASTC, S3TC,
+  RGTC/BPTC, LATC/FXT1 and PVRTC). The host driver must support the format; only
+  ETC2 decoding has been validated by rendered pixels. Eight spatial ETC2 frames
+  and malformed-block rejection are included in the diagnostic.
+- Stable context-lifetime GL strings.
 - Native fence creation/deletion, CPU/GPU waits, identity and status queries.
   Guest handles are monotonic numeric IDs scoped to their native context, never
   host pointers. Up to1024 live fences per context; context teardown deletes
@@ -73,7 +89,7 @@ backend or of desktop/apps**. Recovering that transport requires kernel-owned
 holds through host completion, including guest process exit. No raw guest or
 host process pointers are exchanged by this version.
 
-A context adapter now compiles separately against the EAGL interface. Audit the
+The complete bridge now links without unresolved GL symbols. Audit the
 remaining bridge requirements with:
 
 ```sh
@@ -82,7 +98,9 @@ python3 tools/native-gl/eagl-coverage.py --require-ready
 
 This compiles the actual EAGL source and reports unresolved GL symbols and missing
 dispatch entries; it currently rejects readiness. Added declarations are for the
-audit object only, never stub implementations. No adapter is installed in the VM.
+audit object only, never stub implementations. The remaining marked dispatch
+entry is `glAlphaFunc`. The optional isolated test deploys a temporary bridge
+inside its own process; no normal boot/runtime library is replaced.
 
 Other missing pieces include complete required API coverage and runtime EAGL
 integration, share groups/GLES2 contexts, client vertex/index arrays, PBOs,
