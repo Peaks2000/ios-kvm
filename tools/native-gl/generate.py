@@ -52,6 +52,10 @@ for opcode, (name, (ret, params)) in enumerate(sorted(prototypes.items()), 1):
         client.append(f' ng_call({opcode},args,{len(params)*8},NULL,0);')
     else:
         client.append(f' ng_enqueue({opcode},args,{len(params)*8});')
+    if name == 'glPixelStorei':
+        client.append(' ng_pixel_store_update(pname,param);')
+    elif name == 'glBindBuffer':
+        client.append(' ng_pixel_buffer_bind(target);')
     client.append('}')
     server.append(f'case {opcode}: {{')
     server.append(f' if(size!={len(params)*8}) return -1;')

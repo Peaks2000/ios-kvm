@@ -66,6 +66,7 @@ static GLuint texture(unsigned w, unsigned h) {
 #include "query-check.h"
 #include "shared-check.h"
 #include "shared-bench.h"
+#include "pixel-state-check.h"
 static void *isolation(void *argument) {
   unsigned color = (unsigned)(uintptr_t)argument;
   GLuint tex = texture(2, 2), fbo;
@@ -416,6 +417,7 @@ int main(void) {
   require(glGetError() == 0, "cleanup");
   ios_kvm_native_gl_disconnect();
   explicit_contexts();
+  pixel_state_context_check();
   puts("Native GL general API check PASSED (20 frames, padded input/output, "
        "shader errors, independent thread contexts)");
   return 0;

@@ -1,5 +1,43 @@
 # Local development status
 
+## November 2: remove native transfer roundtrips; verify producer exit
+
+- Native GLES now tracks valid pixel-store state per context instead of sending
+  five synchronous state queries for every texture upload and readback. Invalid
+  writes still reach the host driver for GL errors without changing the shadow.
+  Relevant PBO binds and buffer deletions invalidate binding knowledge, queried
+  lazily before transfer. Public glGetIntegerv still reports driver state. The
+  existing PBO-transfer rejection remains. This is an optimization of the
+  experimental native backend, not a change to the running VirGL desktop.
+- Same-process queried/cached/cached/queried comparison, shared readback in all
+  samples: 750x1624 mean20.2567ms ->5.7939ms (3.50x); 1125x2436
+  mean27.1735ms ->13.4565ms (2.02x). Two warmups/eight measured frames per block;
+  all image/padding bytes checked outside timing, actual shared counts checked,
+  all stalls retained. Public samples and binary hashes:
+  `tools/native-gl/evidence/pixel-state-nvidia-20261102.json`. These isolated
+  clear/readback results must not be multiplied into a claimed desktop speedup.
+- Added real guest tests with two contexts owning different pack/unpack strides
+  and skips: fresh texture uploads and reads survive repeated switches, exact
+  padding matches and public queries agree with driver state. Invalid pack
+  alignment/negative row length preserve shared-read pixels and GL errors.
+  General/query/ETC2/fence/context/EAGL surface suites pass on LLVMPIPE and an
+  ASan/UBSan NVIDIA host. Receipts `pixel-state-eagl-software` and
+  `pixel-state-eagl-asan-nvidia` under `.local/native-gl-api`; no host sanitizer
+  reports, driver leak detection disabled.
+- Added compile-only host pause injection and `run-exit-check.py`: stop after
+  native rendering and validation but before guest destination writes, kill the
+  temporary producing process and confirm its PID is gone. A separate guest
+  observer finds the retained surface and cannot take a nonblocking CPU lock.
+  After host resume, its waiting lock succeeds, every pixel/padding byte matches,
+  and releasing the observer makes the surface ID disappear. NVIDIA and
+  software ASan/UBSan hosts pass; the state-cached client also passes on NVIDIA.
+  Receipts `.local/native-gl-api/exit-{shared-nvidia,shared-software,cached-nvidia}`.
+  Only the separate diagnostic server contains the stop hook. No VM/compositor
+  restart, runtime replacement or storage migration. This checks producer exit
+  at the write boundary, not every possible failure point. Full compositor,
+  app/Metal compatibility, physical AMD/Intel testing and CPU performance remain
+  unfinished; the overall goal is active.
+
 ## November 2: retained native readback and measured transfer gains
 
 - Added optional shared readback to the general native GLES backend (wire v5),
@@ -18,8 +56,8 @@
   recovery. NVIDIA copied and shared paths also pass with an ASan/UBSan host,
   driver leak detection disabled, with no sanitizer reports. Receipts under
   `.local/native-gl-api/shared-{eagl-nvidia,eagl-software,eagl-asan-nvidia}`
-  and `shared-disabled-asan-nvidia`. Native guest-process-exit-during-write
-  fault injection remains outstanding; default runtime is unchanged.
+  and `shared-disabled-asan-nvidia`. Producer-exit testing was subsequently
+  added below; default runtime is unchanged.
 - A same-process copied/shared/shared/copied benchmark checks every frame's
   pixels and padding outside timing, verifies the chosen path actually ran, and
   retains all measured stalls. Two warmups and eight measured frames per block.

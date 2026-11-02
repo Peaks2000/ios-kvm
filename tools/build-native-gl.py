@@ -24,7 +24,7 @@ clang = ['clang', '-target', 'arm64-apple-ios16.0', '-isysroot', str(sdk),
 library = out / 'libios-kvm-native-gl.dylib'
 subprocess.run([*clang, '-dynamiclib', '-install_name', '@rpath/libios-kvm-native-gl.dylib',
                 str(src / 'client.c'), '-framework', 'IOKit', '-o', str(library)], check=True)
-for name in ('guest-check', 'context-race-check'):
+for name in ('guest-check', 'context-race-check', 'exit-check'):
     subprocess.run([*clang, str(src / (name + '.c')), str(library), '-framework', 'IOSurface',
                     '-framework', 'CoreFoundation', '-Wl,-rpath,@executable_path',
                     '-o', str(out / name)], check=True)

@@ -20,7 +20,10 @@ p.add_argument('--server', type=Path, help='Use a separate instrumented native s
 p.add_argument('--eagl', action='store_true', help='Also run the isolated EAGL macro ABI diagnostic')
 p.add_argument('--shared-ram', action='store_true', help='Opt into retained IOSurface readback through this VM RAM')
 p.add_argument('--benchmark', action='store_true', help='Measure copied/shared readback ABBA at two phone resolutions')
+p.add_argument('--benchmark-pixel-state', action='store_true', help='Benchmark shared reads with state queries versus context shadowing')
 a = p.parse_args()
+if a.benchmark_pixel_state:
+    a.benchmark = True
 if a.benchmark and not a.shared_ram:
     p.error('--benchmark requires --shared-ram')
 if not 1024 <= a.port <= 65535:
@@ -62,7 +65,8 @@ server = None
 guest_path = None
 receipt = {'scope': 'Native GLES API correctness and optional readback benchmark; not desktop integration or FPS',
            'profile': str(a.profile.resolve()), 'selected': selected, 'port': a.port,
-           'shared_ram_requested': a.shared_ram, 'benchmark_requested': a.benchmark}
+           'shared_ram_requested': a.shared_ram, 'benchmark_requested': a.benchmark,
+           'pixel_state_benchmark_requested': a.benchmark_pixel_state}
 error = None
 with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local') as directory, \
         (a.output / 'server.log').open('w') as server_log, \
@@ -110,7 +114,8 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
                            stdout=deploy_log, stderr=deploy_log, timeout=30, check=True)
         command = (f'export IOS_KVM_NATIVE_GL_HOST=10.0.2.2 IOS_KVM_NATIVE_GL_PORT={a.port} '
                    f'IOS_KVM_NATIVE_GL_TOKEN_FILE={shlex.quote(guest_path + "/token")} '
-                   f'IOS_KVM_NATIVE_SHARED={int(a.shared_ram)} IOS_KVM_NATIVE_BENCH={int(a.benchmark)}; '
+                   f'IOS_KVM_NATIVE_SHARED={int(a.shared_ram)} IOS_KVM_NATIVE_BENCH={int(a.benchmark)} '
+                   f'IOS_KVM_NATIVE_BENCH_PIXEL_STATE={int(a.benchmark_pixel_state)}; '
                    f'{shlex.quote(guest_path + "/guest-check")}')
         result = subprocess.run([*ssh, command], cwd=root, capture_output=True, text=True, timeout=180 if a.benchmark else 45)
         output = result.stdout + result.stderr

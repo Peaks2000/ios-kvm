@@ -77,6 +77,10 @@ static void shared_surface_check(void) {
     if (frame == 3)
       glEnable(
           0xdeadbeef); /* Shared readback must preserve an earlier GL error. */
+    if (frame == 4) {
+      glPixelStorei(GL_PACK_ALIGNMENT, 3);
+      glPixelStorei(GL_PACK_ROW_LENGTH, -1);
+    }
     ios_kvm_native_gl_readback_surface(lease, IOSurfaceGetID(surface));
     void *old = ios_kvm_native_gl_readback_set(lease);
     glReadPixels(0, 0, w, h, NG_BGRA, GL_UNSIGNED_BYTE, pixels);
@@ -96,7 +100,9 @@ static void shared_surface_check(void) {
           require(value == 0xa5, "shared surface padding");
       }
     IOSurfaceUnlock(surface, kIOSurfaceLockReadOnly, NULL);
-    require(glGetError() == (frame == 3 ? GL_INVALID_ENUM : GL_NO_ERROR),
+    require(glGetError() == (frame == 3   ? GL_INVALID_ENUM
+                             : frame == 4 ? GL_INVALID_VALUE
+                                          : GL_NO_ERROR),
             "shared read preserves prior GL errors");
     require(glGetError() == 0, "shared GL error consumed once");
     usleep(2000);

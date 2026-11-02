@@ -19,6 +19,10 @@ struct ng_string_entry {
   int indexed;
   char *text;
 };
+struct ng_pixel_store {
+  GLint alignment, row, rows, pixels, buffer;
+  int buffer_known;
+};
 struct ios_kvm_native_gl_context {
   int fd;
   int explicit_owner;
@@ -28,6 +32,7 @@ struct ios_kvm_native_gl_context {
   uint8_t *commands;
   struct ng_string_entry *strings;
   unsigned string_count, string_capacity;
+  struct ng_pixel_store pixel_store[2]; /* unpack, pack */
 };
 static pthread_key_t ng_key;
 static pthread_once_t ng_once = PTHREAD_ONCE_INIT;
@@ -100,6 +105,10 @@ static struct ios_kvm_native_gl_context *ng_open(int explicit_owner) {
       (ack.features & ~NG_FEATURE_SHARED_READ))
     goto failed;
   c->features = ack.features;
+  for (unsigned i = 0; i < 2; i++) {
+    c->pixel_store[i].alignment = 4;
+    c->pixel_store[i].buffer_known = 1;
+  }
   return c;
 failed:
   ng_free(c);
@@ -228,6 +237,7 @@ static void ng_call(uint32_t op, const void *data, size_t size, void *output,
 }
 static int ng_shared_try_read(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum,
                               void *);
+#include "client-pixel-state.h"
 #include "client-pointers.h"
 #include "client-query.h"
 #include "client-scalars.h"

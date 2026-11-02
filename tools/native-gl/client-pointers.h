@@ -30,6 +30,8 @@ static void ng_delete(unsigned kind, GLsizei n, const GLuint *names) {
     ng_failure("object count");
   uint64_t a[] = {kind, (uint64_t)n};
   ng_blob(NG_DELETE, a, 2, names, n * 4, NULL, 0, 0);
+  if (kind == 1)
+    ng_pixel_buffers_forget();
 }
 #define OBJECT(kind, name)                                                     \
   void glGen##name(GLsizei n, GLuint *p) { ng_generate(kind, n, p); }          \
@@ -213,16 +215,11 @@ static size_t ng_pixel_layout(int pack, GLsizei width, GLsizei height,
   if (width < 0 || height < 0 || width > 4096 || height > 4096 ||
       (format != GL_RGBA && format != NG_BGRA) || type != GL_UNSIGNED_BYTE)
     ng_failure("pixel format/size not implemented");
-  GLint alignment, row, rows, pixels, buffer;
-  glGetIntegerv(pack ? GL_PIXEL_PACK_BUFFER_BINDING
-                     : GL_PIXEL_UNPACK_BUFFER_BINDING,
-                &buffer);
-  if (buffer)
+  struct ng_pixel_store state = ng_pixel_store_get(pack);
+  GLint alignment = state.alignment, row = state.row, rows = state.rows,
+        pixels = state.pixels;
+  if (state.buffer)
     ng_failure("PBO transfer not implemented");
-  glGetIntegerv(pack ? GL_PACK_ALIGNMENT : GL_UNPACK_ALIGNMENT, &alignment);
-  glGetIntegerv(pack ? GL_PACK_ROW_LENGTH : GL_UNPACK_ROW_LENGTH, &row);
-  glGetIntegerv(pack ? GL_PACK_SKIP_ROWS : GL_UNPACK_SKIP_ROWS, &rows);
-  glGetIntegerv(pack ? GL_PACK_SKIP_PIXELS : GL_UNPACK_SKIP_PIXELS, &pixels);
   if ((alignment != 1 && alignment != 2 && alignment != 4 && alignment != 8) ||
       row < 0 || rows < 0 || pixels < 0 || row > 65536 || rows > 65536 ||
       pixels > 65536)

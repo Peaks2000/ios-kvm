@@ -102,8 +102,23 @@ completion API, with kernel shared/async support enabled. The server advertises
 this feature only when its explicit RAM mapping succeeds; untagged leases and
 EAGL `glFinish` use the copied path. Direct IOSurface texture import is still
 unsupported. New surface tests check changing spatial images, flipped targets,
-padding, prior/new GL errors and kernel error completion. The new native path's
-guest-process-exit-during-write fault injection remains outstanding.
+padding, prior/new GL errors and kernel error completion.
+
+The process-exit test uses a separately compiled host pause hook, absent from
+the normal server. It stops after rendering/validation and before destination
+writes, kills the temporary guest producer and confirms that PID is gone. A
+separate guest observer finds the pending surface, fails a nonblocking CPU lock,
+then waits for host completion. Resuming the host yields correct pixels and
+padding; after the observer releases, the surface ID disappears. This passes
+on NVIDIA and software rendering with ASan/UBSan hosts (driver leak detection
+disabled). The cached-state client also passes on NVIDIA. This tests producer
+exit at the paused write boundary, not every possible host/guest failure point.
+
+```sh
+python3 tools/native-gl/run-exit-check.py --sanitize \
+  --profile .local/gpu-profile-auto.json \
+  --output .local/native-gl-api/my-process-exit-check
+```
 
 For a disposable host-only bounds test (no VM memory accessed):
 
@@ -128,6 +143,24 @@ fixed-scene prototype's results are separate. No physical Intel/AMD performance
 or near-native execution claim is made.
 Public raw timing samples and binary hashes are recorded in
 `evidence/shared-readback-nvidia-20261102.json`.
+
+The proxy now shadows valid pack/unpack pixel-store changes per context instead
+of issuing five synchronous state queries before each transfer. Invalid writes
+still reach the native driver for their errors and leave the shadow unchanged.
+PBO binding knowledge is invalidated on relevant binds and buffer deletions;
+unknown binding state is queried before transfer. Ordinary public state queries
+still come from the driver. PBO transfers themselves remain unsupported.
+Independent pack/unpack uploads and reads across two switching contexts are
+checked against pixels, padding and actual driver state. Set
+`IOS_KVM_NATIVE_STATE_CACHE=0` in a guest diagnostic to restore state queries.
+
+Use `--shared-ram --benchmark-pixel-state` for an independent queried/cached/
+cached/queried comparison, with shared readback required throughout. On the
+same local host this reduced clear/readback from20.26ms to5.79ms at750x1624
+(3.50x), and27.17ms to13.46ms at1125x2436 (2.02x). These are separate paired
+measurements; do not multiply them with the earlier transfer ratios to claim
+desktop performance. Raw samples/hashes:
+`evidence/pixel-state-nvidia-20261102.json`.
 
 The complete bridge now links without unresolved GL symbols. Audit the
 remaining bridge requirements with:

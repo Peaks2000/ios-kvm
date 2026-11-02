@@ -1,0 +1,172 @@
+{
+  "date": "2026-11-02",
+  "scope": "Isolated native shared clear/readback latency; no desktop/app FPS or whole-VM claim",
+  "host_cpu": "AMD Ryzen 7 7435HS",
+  "renderer": "NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2",
+  "method": "One guest process, queried/cached/cached/queried pixel state; 2 warmups + 8 measured frames per block; shared readback required for every sample; full image/padding validation outside timed interval",
+  "timed_region": "glClearColor, glClear, glReadPixels through synchronous RPC completion",
+  "hashes": {
+    "libios-kvm-native-gl.dylib": "dbcc34eb93f4cfc137b89fc4d122d1258bb7cf8df422050e07d6a9ca262a448a",
+    "guest-check": "24b9efdfb37cf4d13205022d7eae98e233155f6cb2c0217af3fd535794d60f6b",
+    "context-race-check": "fb48293f2e51482529cde3c740c17d0710d9294d57b8f67dce15afeaafb025c9",
+    "server": "7434fad21320d0a805d6b2eca6dd12e1a752e8a43182ee57bc00cd29cc8b1cd2",
+    "eagl-check": "95e0b7f20b2e96147c01e8537342247d42a0306e59e7017a8d3d1e031b80afab",
+    "eagl-coverage/libhakios-native-eagl.dylib": "3f906d6b4f7f81e0e62120094be43090cef9aa18b25a68647f1ff5c307f380e1"
+  },
+  "resolutions": [
+    {
+      "width": 750,
+      "height": 1624,
+      "queried_mean_ms": 20.2566875,
+      "cached_mean_ms": 5.7939375,
+      "mean_speedup": 3.496186746922969,
+      "blocks": [
+        {
+          "state_cache": false,
+          "warmup_ns": [
+            22628000,
+            18396000
+          ],
+          "measured_ns": [
+            18782000,
+            15759000,
+            17462000,
+            22305000,
+            19222000,
+            18115000,
+            20039000,
+            16995000
+          ]
+        },
+        {
+          "state_cache": true,
+          "warmup_ns": [
+            6319000,
+            7625000
+          ],
+          "measured_ns": [
+            6475000,
+            5039000,
+            4487000,
+            6262000,
+            6045000,
+            4565000,
+            4965000,
+            9022000
+          ]
+        },
+        {
+          "state_cache": true,
+          "warmup_ns": [
+            5510000,
+            5442000
+          ],
+          "measured_ns": [
+            4689000,
+            4817000,
+            4717000,
+            4625000,
+            5480000,
+            8300000,
+            5043000,
+            8172000
+          ]
+        },
+        {
+          "state_cache": false,
+          "warmup_ns": [
+            19413000,
+            18745000
+          ],
+          "measured_ns": [
+            25542000,
+            23124000,
+            21337000,
+            19494000,
+            22988000,
+            23772000,
+            18970000,
+            20201000
+          ]
+        }
+      ]
+    },
+    {
+      "width": 1125,
+      "height": 2436,
+      "queried_mean_ms": 27.1735,
+      "cached_mean_ms": 13.4565,
+      "mean_speedup": 2.0193586742466465,
+      "blocks": [
+        {
+          "state_cache": false,
+          "warmup_ns": [
+            32012000,
+            27117000
+          ],
+          "measured_ns": [
+            26853000,
+            28854000,
+            32827000,
+            27488000,
+            27560000,
+            23258000,
+            24666000,
+            29881000
+          ]
+        },
+        {
+          "state_cache": true,
+          "warmup_ns": [
+            11262000,
+            16531000
+          ],
+          "measured_ns": [
+            16318000,
+            14309000,
+            13767000,
+            13090000,
+            12439000,
+            13449000,
+            12569000,
+            13142000
+          ]
+        },
+        {
+          "state_cache": true,
+          "warmup_ns": [
+            12899000,
+            12938000
+          ],
+          "measured_ns": [
+            13179000,
+            12718000,
+            13490000,
+            12916000,
+            13935000,
+            13202000,
+            14654000,
+            12127000
+          ]
+        },
+        {
+          "state_cache": false,
+          "warmup_ns": [
+            27166000,
+            26719000
+          ],
+          "measured_ns": [
+            31688000,
+            30191000,
+            22801000,
+            23618000,
+            24323000,
+            29876000,
+            25143000,
+            25749000
+          ]
+        }
+      ]
+    }
+  ]
+}

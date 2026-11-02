@@ -1,6 +1,28 @@
 /* Map once before threads start; requests never replace the mapping. */
 #include "../gpu-ram-map.h"
 static struct ios_kvm_ram_view ng_ram;
+#ifdef NG_SHARED_TEST_HOOKS
+#include <signal.h>
+/* Compiled only into the process-exit diagnostic server. Stop after validating
+ * and rendering a retained request, before touching its destination memory. */
+static void ng_shared_test_pause(void) {
+  static _Atomic int stopped;
+  if (atomic_exchange(&stopped, 1))
+    return;
+  const char *text = getenv("IOS_KVM_NATIVE_TEST_NOTIFY_FD");
+  char *end;
+  long fd = text ? strtol(text, &end, 10) : -1;
+  if (!text || !*text || *end || fd < 3 || fd > INT32_MAX)
+    _exit(80);
+  const char ready = 'R';
+  ssize_t n;
+  do {
+    n = write((int)fd, &ready, 1);
+  } while (n < 0 && errno == EINTR);
+  if (n != 1 || raise(SIGSTOP))
+    _exit(81);
+}
+#endif
 struct ng_segment {
   uint64_t physical, length;
 };
@@ -107,6 +129,9 @@ static int ng_shared_read(const uint8_t *data, size_t size, void *output,
   }
   if (a[4] == NG_BGRA)
     ng_swap_rb(pixels, pixels, tight);
+#ifdef NG_SHARED_TEST_HOOKS
+  ng_shared_test_pause();
+#endif
   /* Only active pixel ranges are written; row padding stays untouched. */
   size_t part = 0;
   uint64_t base = 0;
