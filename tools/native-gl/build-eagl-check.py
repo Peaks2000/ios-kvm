@@ -12,7 +12,7 @@ out = root / '.local/native-gl-api'
 subprocess.run(['python3', str(src / 'eagl-coverage.py')], cwd=root, check=True)
 if not json.loads((out / 'eagl-coverage/coverage.json').read_text()).get('bridge_linked'):
     raise SystemExit('EAGL bridge has unresolved symbols; isolated test cannot use an older artifact')
-text = (src / 'eagl-check.m').read_text()
+text = (src / 'eagl-check.m').read_text() + (src / 'eagl-surface-check.h').read_text()
 names = set(re.findall(r'\b(gl[A-Z]\w*)\s*\(', text))
 slots = {}
 for line in (root / 'vendor/hakios/userland/src/eagl_slots.txt').read_text().splitlines():
@@ -50,6 +50,6 @@ subprocess.run(['clang', '-target', 'arm64-apple-ios16.0', '-isysroot',
                 str(root / '.local/sdks/iPhoneOS16.5.sdk'), '-fuse-ld=lld', '-O2',
                 '-Wall', '-Wextra', '-Werror', '-Wno-deprecated-declarations',
                 '-I', str(root / '.local/mesa-25.0.7/include'), '-I', str(out),
-                '-framework', 'Foundation', '-framework', 'OpenGLES',
+                '-framework', 'Foundation', '-framework', 'OpenGLES', '-framework', 'IOSurface',
                 str(src / 'eagl-check.m'), '-o', str(out / 'eagl-check')], check=True)
 print('Built isolated EAGL macro ABI test; desktop unchanged')

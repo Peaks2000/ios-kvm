@@ -83,11 +83,51 @@ and subsequent healthy connections.
 
 ## Integration work remaining
 
-This general backend currently uses bounded copied socket packets. The earlier
-shared-RAM fixed-scene prototype's 1.7–8.9x results are **not measurements of this
-backend or of desktop/apps**. Recovering that transport requires kernel-owned
-holds through host completion, including guest process exit. No raw guest or
-host process pointers are exchanged by this version.
+Commands use bounded copied socket packets. An optional shared readback path
+writes completed pixels into sealed guest RAM using physical scatter/gather
+ranges from an explicit IOSurface pin. The existing kernel's `0x102` method
+retains the kernel-backed surface independently of the requesting task until
+the host publishes completion. Wrapped user memory is ineligible. The host
+validates RAM ownership/seals, ranges, segment overlaps, completion alignment,
+dimensions and output bounds before writing; it preserves row padding and GL
+errors. This first version still waits for the normal RPC acknowledgement. It
+removes the bulk socket transfer and guest row copy, but is not asynchronous
+submission or GPU scanout. A failed request after obtaining a kernel hold never
+falls back to an unretained write. Host loss can leave a bounded retained surface
+until VM shutdown; no unsafe cancellation is attempted.
+
+Run the retained-surface and isolated EAGL checks with `--shared-ram --eagl`.
+This requires a running VM with shared sealed RAM and the matching kernel pin/
+completion API, with kernel shared/async support enabled. The server advertises
+this feature only when its explicit RAM mapping succeeds; untagged leases and
+EAGL `glFinish` use the copied path. Direct IOSurface texture import is still
+unsupported. New surface tests check changing spatial images, flipped targets,
+padding, prior/new GL errors and kernel error completion. The new native path's
+guest-process-exit-during-write fault injection remains outstanding.
+
+For a disposable host-only bounds test (no VM memory accessed):
+
+```sh
+python3 tools/native-gl/test-shared-host.py \
+  --generated .local/native-gl-api --profile .local/gpu-profile-auto.json
+```
+
+Add `--shared-ram --benchmark` to `run-check.py` for copied/shared/shared/copied
+readback measurements in one guest process. Each block has two warmup frames
+and eight measured frames. Every image/padding byte is checked outside the
+timed region; shared submissions must actually occur. Raw samples, including
+stalls, are saved in `benchmark.json`.
+
+On the local Ryzen7435HS/RTX4060 host, an initial paired native clear/readback
+test measured mean247.30ms copied versus20.59ms shared at750x1624 (12.01x),
+and523.98ms versus26.62ms at1125x2436 (19.68x). Both copied control blocks
+were substantially slower than both shared blocks. These are measurements of
+this backend's transfer step, **not desktop/app FPS or a whole-VM speedup**.
+Receipts: `.local/native-gl-api/shared-phone-benchmark-nvidia`. The earlier
+fixed-scene prototype's results are separate. No physical Intel/AMD performance
+or near-native execution claim is made.
+Public raw timing samples and binary hashes are recorded in
+`evidence/shared-readback-nvidia-20261102.json`.
 
 The complete bridge now links without unresolved GL symbols. Audit the
 remaining bridge requirements with:

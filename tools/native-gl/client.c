@@ -4,6 +4,7 @@
 #include "context.h"
 #include "io.h"
 #include "protocol.h"
+#include "readback.h"
 #include "schema.h"
 #include <GLES3/gl31.h>
 #include <arpa/inet.h>
@@ -22,7 +23,7 @@ struct ios_kvm_native_gl_context {
   int fd;
   int explicit_owner;
   pthread_mutex_t ownership;
-  uint32_t sequence;
+  uint32_t sequence, features;
   size_t used, allocated;
   uint8_t *commands;
   struct ng_string_entry *strings;
@@ -93,10 +94,12 @@ static struct ios_kvm_native_gl_context *ng_open(int explicit_owner) {
   ng_socket_options(c->fd);
   if (connect(c->fd, (struct sockaddr *)&address, sizeof(address)))
     goto failed;
-  uint32_t ack = 0;
+  struct ng_ack ack = {0};
   if (ng_io(c->fd, &hello, sizeof(hello), 1) ||
-      ng_io(c->fd, &ack, sizeof(ack), 0) || ack != NG_MAGIC)
+      ng_io(c->fd, &ack, sizeof(ack), 0) || ack.magic != NG_MAGIC ||
+      (ack.features & ~NG_FEATURE_SHARED_READ))
     goto failed;
+  c->features = ack.features;
   return c;
 failed:
   ng_free(c);
@@ -223,9 +226,12 @@ static void ng_call(uint32_t op, const void *data, size_t size, void *output,
   if (ng_request(op, data, size, output, capacity) != capacity)
     ng_failure("unexpected output length");
 }
+static int ng_shared_try_read(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum,
+                              void *);
 #include "client-pointers.h"
 #include "client-query.h"
 #include "client-scalars.h"
+#include "client-shared.h"
 #include "client-sync.h"
 /* Diagnostic implicit contexts are released; explicit contexts remain
  * owner-managed. */

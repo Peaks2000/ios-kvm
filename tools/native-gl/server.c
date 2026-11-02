@@ -29,14 +29,18 @@ static int ng_output(void *output, size_t capacity, size_t *used,
   *used = size;
   return 0;
 }
+#include "server-errors.h"
 #include "server-pointers.h"
 #include "server-query.h"
+#include "server-shared.h"
 #include "server-sync.h"
 static int ng_dispatch(uint32_t opcode, const uint8_t *data, size_t size,
                        void *output, size_t capacity, size_t *used) {
   switch (opcode) {
 #include "server-scalars.h"
   default:
+    if (opcode == NG_READ_SHARED)
+      return ng_shared_read(data, size, output, capacity, used);
     if (opcode >= NG_GET_FLOAT)
       return ng_query(opcode, data, size, output, capacity, used);
     if (opcode >= NG_FENCE_SYNC)
@@ -64,7 +68,7 @@ static void *ng_serve(void *argument) {
   if (context == EGL_NO_CONTEXT || surface == EGL_NO_SURFACE ||
       !eglMakeCurrent(ng_display, surface, surface, context))
     goto done;
-  uint32_t ack = NG_MAGIC;
+  struct ng_ack ack = {NG_MAGIC, ng_ram.address ? NG_FEATURE_SHARED_READ : 0};
   if (ng_io(fd, &ack, sizeof(ack), 1))
     goto done;
   fprintf(stdout, "native GLES client: %s\n", glGetString(GL_RENDERER));
@@ -193,6 +197,10 @@ int main(int argc, char **argv) {
   unsigned long port = strtoul(argv[2], &end, 10);
   if (!*argv[2] || *end || port < 1024 || port > 65535)
     return 1;
+  if (ng_ram_init()) {
+    fprintf(stderr, "native GLES: invalid shared RAM mapping\n");
+    return 1;
+  }
   ng_display = ng_choose_display();
   if (ng_display == EGL_NO_DISPLAY || !eglInitialize(ng_display, NULL, NULL) ||
       !eglBindAPI(EGL_OPENGL_ES_API))

@@ -38,7 +38,8 @@ def connect(*, secret=token, version=wire_version, fingerprint=schema):
 
 def authenticated():
     s = connect()
-    assert read(s, 4) == struct.pack('<I', magic)
+    ack_magic, features = struct.unpack('<II', read(s, 8))
+    assert ack_magic == magic and not features & ~1
     return s
 
 def record(op, data=b''):

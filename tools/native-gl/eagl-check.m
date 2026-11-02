@@ -1,13 +1,18 @@
 /* Isolated test of the same private EAGL macro table used by CoreAnimation. */
 #include <GLES3/gl3.h>
+#include <IOSurface/IOSurfaceRef.h>
 #import <OpenGLES/EAGL.h>
 #include <dlfcn.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 @interface EAGLContext (NativeMacroCheck)
 - (void *)getMacroContextPrivate;
+- (BOOL)attachImage:(unsigned long)target
+      toCoreSurface:(IOSurfaceRef)surface
+     invertedRender:(BOOL)inverted;
 @end
 static void **ng_eagl_table;
 #include "eagl-test-dispatch.h"
@@ -31,6 +36,7 @@ static GLuint shader(GLenum kind, const char *text) {
   check(ok, "shader compilation");
   return s;
 }
+#include "eagl-surface-check.h"
 int main(int argc, char **argv) {
   @autoreleasepool {
     if (argc != 2)
@@ -138,6 +144,7 @@ int main(int argc, char **argv) {
       glDeleteShader(fs);
       printf("Native EAGL shader variant %u passed\n", variant);
     }
+    shared_eagl_surface(context, library);
     glDeleteBuffers(2, buffers);
     glDeleteVertexArrays(1, &vao);
     glDeleteFramebuffers(1, &fbo);

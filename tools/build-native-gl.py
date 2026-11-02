@@ -23,8 +23,9 @@ clang = ['clang', '-target', 'arm64-apple-ios16.0', '-isysroot', str(sdk),
          '-fuse-ld=lld', *flags, '-I', str(mesa / 'include')]
 library = out / 'libios-kvm-native-gl.dylib'
 subprocess.run([*clang, '-dynamiclib', '-install_name', '@rpath/libios-kvm-native-gl.dylib',
-                str(src / 'client.c'), '-o', str(library)], check=True)
+                str(src / 'client.c'), '-framework', 'IOKit', '-o', str(library)], check=True)
 for name in ('guest-check', 'context-race-check'):
-    subprocess.run([*clang, str(src / (name + '.c')), str(library), '-Wl,-rpath,@executable_path',
+    subprocess.run([*clang, str(src / (name + '.c')), str(library), '-framework', 'IOSurface',
+                    '-framework', 'CoreFoundation', '-Wl,-rpath,@executable_path',
                     '-o', str(out / name)], check=True)
 print(f'Built native GLES research backend in {out}; launcher unchanged')

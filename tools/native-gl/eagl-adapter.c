@@ -2,6 +2,7 @@
  */
 #include "context.h"
 #include "hakios.gl.h"
+#include "readback.h"
 #include <stdint.h>
 #include <stdio.h>
 
@@ -21,21 +22,18 @@ void hakios_gl_destroy(struct hakios_gl *context) {
 const char *hakios_gl_library(void) {
   return "ios-kvm native GLES (experimental)";
 }
-/* This backend currently copies readbacks. No surface import/pin is advertised.
- */
+/* Only explicit kernel-retained surface leases enable shared readback. */
 void *hakios_gl_readback_pin(void *address, uint32_t bytes) {
-  (void)address;
-  (void)bytes;
-  return NULL;
+  return ios_kvm_native_gl_readback_pin(address, bytes);
 }
-void hakios_gl_readback_release(void *lease) { (void)lease; }
+void hakios_gl_readback_release(void *lease) {
+  ios_kvm_native_gl_readback_release(lease);
+}
 void hakios_gl_readback_surface(void *lease, uint32_t surface) {
-  (void)lease;
-  (void)surface;
+  ios_kvm_native_gl_readback_surface(lease, surface);
 }
 void *hakios_gl_readback_set(void *lease) {
-  (void)lease;
-  return NULL;
+  return ios_kvm_native_gl_readback_set(lease);
 }
 int hakios_gl_surface_texture(struct hakios_gl *context, uint32_t surface) {
   (void)context;

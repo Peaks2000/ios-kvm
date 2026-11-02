@@ -18,7 +18,11 @@ p.add_argument('--output', required=True, type=Path, help='New directory for tes
 p.add_argument('--port', type=int, default=6733)
 p.add_argument('--server', type=Path, help='Use a separate instrumented native server binary')
 p.add_argument('--eagl', action='store_true', help='Also run the isolated EAGL macro ABI diagnostic')
+p.add_argument('--shared-ram', action='store_true', help='Opt into retained IOSurface readback through this VM RAM')
+p.add_argument('--benchmark', action='store_true', help='Measure copied/shared readback ABBA at two phone resolutions')
 a = p.parse_args()
+if a.benchmark and not a.shared_ram:
+    p.error('--benchmark requires --shared-ram')
 if not 1024 <= a.port <= 65535:
     p.error('port must be between 1024 and 65535')
 profile = json.loads(a.profile.read_text())
@@ -35,11 +39,30 @@ if a.eagl:
     subprocess.run(['python3', str(root / 'tools/native-gl/build-eagl-check.py')], cwd=root, check=True)
 local = root / '.local/native-gl-api'
 server_binary = a.server.resolve() if a.server else local / 'server'
+shared_environment = {}
+if a.shared_ram:
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('native_check_qmp', root / 'vendor/hakios/qemu/touch.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    q = module.Qmp()
+    try:
+        if q.command('query-name').get('name') != 'ios-kvm' or not q.command('query-status').get('running'):
+            raise RuntimeError('Expected a running ios-kvm VM')
+        if not q.command('qom-get', path='/objects/ram', property='share'):
+            raise RuntimeError('VM RAM is not shared')
+        shared_environment = {'IOS_KVM_RAM_FILE': q.command('qom-get', path='/objects/ram', property='mem-path'),
+                              'IOS_KVM_RAM_SIZE': str(q.command('qom-get', path='/objects/ram', property='size'))}
+    finally:
+        q.file.close()
+        q.sock.close()
+
 ssh = ['bash', str(root / 'tools/ssh.sh'), '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10']
 server = None
 guest_path = None
-receipt = {'scope': 'Native GLES API correctness, not desktop integration or performance',
-           'profile': str(a.profile.resolve()), 'selected': selected, 'port': a.port}
+receipt = {'scope': 'Native GLES API correctness and optional readback benchmark; not desktop integration or FPS',
+           'profile': str(a.profile.resolve()), 'selected': selected, 'port': a.port,
+           'shared_ram_requested': a.shared_ram, 'benchmark_requested': a.benchmark}
 error = None
 with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local') as directory, \
         (a.output / 'server.log').open('w') as server_log, \
@@ -53,7 +76,7 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
         os.close(fd)
     try:
         server = subprocess.Popen([str(server_binary), str(token), str(a.port)],
-                                  env={**os.environ, **environment}, stdout=server_log,
+                                  env={**os.environ, **environment, **shared_environment}, stdout=server_log,
                                   stderr=subprocess.STDOUT, cwd=root)
         deadline = time.monotonic() + 10
         while True:
@@ -86,13 +109,24 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
             subprocess.run([*ssh, command], input=source.read_bytes(), cwd=root,
                            stdout=deploy_log, stderr=deploy_log, timeout=30, check=True)
         command = (f'export IOS_KVM_NATIVE_GL_HOST=10.0.2.2 IOS_KVM_NATIVE_GL_PORT={a.port} '
-                   f'IOS_KVM_NATIVE_GL_TOKEN_FILE={shlex.quote(guest_path + "/token")}; '
+                   f'IOS_KVM_NATIVE_GL_TOKEN_FILE={shlex.quote(guest_path + "/token")} '
+                   f'IOS_KVM_NATIVE_SHARED={int(a.shared_ram)} IOS_KVM_NATIVE_BENCH={int(a.benchmark)}; '
                    f'{shlex.quote(guest_path + "/guest-check")}')
-        result = subprocess.run([*ssh, command], cwd=root, capture_output=True, text=True, timeout=45)
+        result = subprocess.run([*ssh, command], cwd=root, capture_output=True, text=True, timeout=180 if a.benchmark else 45)
         output = result.stdout + result.stderr
         (a.output / 'guest.log').write_text(output)
         if result.returncode or 'Native GL general API check PASSED' not in output:
             raise RuntimeError('guest correctness check failed; inspect guest.log')
+        if a.shared_ram and 'Native shared IOSurface check PASSED' not in output:
+            raise RuntimeError('Retained shared IOSurface check did not pass')
+        if a.benchmark:
+            if 'Native shared readback benchmark PASSED' not in output:
+                raise RuntimeError('Shared readback benchmark did not finish')
+            samples = [json.loads(line.split(': ', 1)[1]) for line in output.splitlines()
+                       if line.startswith('Native readback benchmark: ')]
+            if len(samples) != 80:
+                raise RuntimeError('Incomplete shared readback benchmark samples')
+            (a.output / 'benchmark.json').write_text(json.dumps(samples, indent=2) + '\n')
         renderer = next(line.split(': ', 1)[1] for line in output.splitlines() if line.startswith('Native proxy renderer: '))
         software = any(s in renderer.lower() for s in ('llvmpipe', 'softpipe', 'swrast'))
         if renderer.strip() != selected.get('renderer', '').strip():
@@ -115,6 +149,8 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
             (a.output / 'eagl.log').write_text(eagl_output)
             if eagl.returncode or 'Native EAGL macro ABI check PASSED' not in eagl_output:
                 raise RuntimeError('isolated EAGL macro ABI check failed; inspect eagl.log')
+            if a.shared_ram and 'Native EAGL shared IOSurface check PASSED' not in eagl_output:
+                raise RuntimeError('isolated EAGL shared IOSurface check did not pass')
             actual = next(line.split(': ', 1)[1] for line in eagl_output.splitlines()
                           if line.startswith('Native EAGL macro renderer: '))
             if actual.strip() != renderer.strip():

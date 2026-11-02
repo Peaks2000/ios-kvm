@@ -282,6 +282,8 @@ void glTexSubImage2D(GLenum target, GLint level, GLint x, GLint y,
 }
 void glReadPixels(GLint x, GLint y, GLsizei width, GLsizei height,
                   GLenum format, GLenum type, void *pixels) {
+  if (ng_shared_try_read(x, y, width, height, format, type, pixels))
+    return;
   size_t stride, skip,
       bytes = ng_pixel_layout(1, width, height, format, type, &stride, &skip);
   if (!pixels && bytes)

@@ -60,6 +60,8 @@ for opcode, (name, (ret, params)) in enumerate(sorted(prototypes.items()), 1):
     if name in ('glLinkProgram', 'glDeleteProgram'):
         server.append(' ng_uniform_forget(program);')
     call = f'{name}({", ".join(n for _,n in params)})'
+    if name == 'glGetError':
+        call = 'ng_error_get()'
     if ret == 'void':
         server.append(f' {call}; return 0;')
     else:

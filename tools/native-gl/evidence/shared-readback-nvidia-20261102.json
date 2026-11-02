@@ -1,0 +1,167 @@
+{
+  "date": "2026-11-02",
+  "scope": "Isolated native GLES clear/readback latency, not desktop/app FPS or whole-VM speedup",
+  "host_cpu": "AMD Ryzen 7 7435HS",
+  "renderer": "NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2",
+  "guest_execution": "QEMU ARM64 TCG; temporary diagnostic on existing iOS guest",
+  "method": "One process, copied/shared/shared/copied, 2 warmups and 8 measured frames per block; every pixel and row-padding byte verified outside timing; shared submission count checked each frame; monotonic guest clock",
+  "timed_region": "glClearColor, glClear, glReadPixels through synchronous RPC completion",
+  "hashes": {
+    "libios-kvm-native-gl.dylib": "e93792e9a42ededcf96c214073e69ead419394051fdc758689422c9fe0532f5d",
+    "guest-check": "d2282fd8d259c6dc51193563bd9017d1fd224b464773d0a6fc4292812a654167",
+    "context-race-check": "fb48293f2e51482529cde3c740c17d0710d9294d57b8f67dce15afeaafb025c9",
+    "server": "7434fad21320d0a805d6b2eca6dd12e1a752e8a43182ee57bc00cd29cc8b1cd2"
+  },
+  "resolutions": [
+    {
+      "width": 750,
+      "height": 1624,
+      "mean_speedup": 12.01201589571247,
+      "blocks": [
+        {
+          "path": "copied",
+          "warmup_ns": [
+            277737000,
+            250534000
+          ],
+          "measured_ns": [
+            259130000,
+            245204000,
+            252672000,
+            245443000,
+            259653000,
+            250187000,
+            253646000,
+            245965000
+          ]
+        },
+        {
+          "path": "shared",
+          "warmup_ns": [
+            21440000,
+            24496000
+          ],
+          "measured_ns": [
+            21573000,
+            20598000,
+            20797000,
+            19012000,
+            23112000,
+            18804000,
+            24209000,
+            19190000
+          ]
+        },
+        {
+          "path": "shared",
+          "warmup_ns": [
+            24245000,
+            20310000
+          ],
+          "measured_ns": [
+            19871000,
+            22973000,
+            22094000,
+            20839000,
+            18525000,
+            18718000,
+            20209000,
+            18873000
+          ]
+        },
+        {
+          "path": "copied",
+          "warmup_ns": [
+            260127000,
+            241422000
+          ],
+          "measured_ns": [
+            239833000,
+            243995000,
+            240662000,
+            236193000,
+            236486000,
+            253047000,
+            255660000,
+            238946000
+          ]
+        }
+      ]
+    },
+    {
+      "width": 1125,
+      "height": 2436,
+      "mean_speedup": 19.68128112007625,
+      "blocks": [
+        {
+          "path": "copied",
+          "warmup_ns": [
+            525189000,
+            516966000
+          ],
+          "measured_ns": [
+            515464000,
+            512159000,
+            510156000,
+            534514000,
+            523261000,
+            513933000,
+            526392000,
+            523851000
+          ]
+        },
+        {
+          "path": "shared",
+          "warmup_ns": [
+            30547000,
+            29175000
+          ],
+          "measured_ns": [
+            25945000,
+            24732000,
+            24402000,
+            24493000,
+            25669000,
+            29642000,
+            25320000,
+            28813000
+          ]
+        },
+        {
+          "path": "shared",
+          "warmup_ns": [
+            29448000,
+            30000000
+          ],
+          "measured_ns": [
+            29116000,
+            27736000,
+            25335000,
+            26007000,
+            24490000,
+            26953000,
+            30909000,
+            26409000
+          ]
+        },
+        {
+          "path": "copied",
+          "warmup_ns": [
+            522298000,
+            541396000
+          ],
+          "measured_ns": [
+            523651000,
+            533734000,
+            525123000,
+            550628000,
+            518117000,
+            523237000,
+            523499000,
+            525936000
+          ]
+        }
+      ]
+    }
+  ]
+}

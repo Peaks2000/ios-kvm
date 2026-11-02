@@ -64,6 +64,8 @@ static GLuint texture(unsigned w, unsigned h) {
   return t;
 }
 #include "query-check.h"
+#include "shared-check.h"
+#include "shared-bench.h"
 static void *isolation(void *argument) {
   unsigned color = (unsigned)(uintptr_t)argument;
   GLuint tex = texture(2, 2), fbo;
@@ -393,6 +395,8 @@ int main(void) {
   require(glGetError() == GL_INVALID_ENUM, "GL error preserved");
   require(glGetError() == GL_NO_ERROR, "GL error consumed once");
   compressed_pixels();
+  shared_surface_check();
+  shared_surface_benchmark();
   large_surface(750, 1624, GL_RGBA);
   large_surface(1125, 2436, NG_BGRA);
   pthread_t a, b;

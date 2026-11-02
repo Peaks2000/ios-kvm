@@ -1,5 +1,36 @@
 # Local development status
 
+## November 2: retained native readback and measured transfer gains
+
+- Added optional shared readback to the general native GLES backend (wire v5),
+  using the installed kernel's explicit pin and independent `0x102` surface
+  hold/completion contract. Host RAM is mapped once from the owned, sealed VM
+  memfd. Physical segments, overlaps, completion cells and geometry are checked;
+  only active pixel rows are written. Errors inspected internally remain visible
+  through glGetError. Ineligible/untagged leases stay copied. This version waits
+  for acknowledgement; it does not implement asynchronous native submission or
+  host-resident scanout. Direct IOSurface texture import is still unsupported.
+- Actual guest tests and isolated EAGL tests pass on NVIDIA RTX4060 and LLVMPIPE:
+  changing spatial pixels, inverted surfaces, untouched padding, explicit hold
+  counts, copied Finish fallback, prior/new GPU errors and kernel error
+  completion. Disposable sealed-RAM host tests pass on both renderers for split,
+  nonlinear SG writes, invalid ranges/overlaps, disconnects and subsequent
+  recovery. NVIDIA copied and shared paths also pass with an ASan/UBSan host,
+  driver leak detection disabled, with no sanitizer reports. Receipts under
+  `.local/native-gl-api/shared-{eagl-nvidia,eagl-software,eagl-asan-nvidia}`
+  and `shared-disabled-asan-nvidia`. Native guest-process-exit-during-write
+  fault injection remains outstanding; default runtime is unchanged.
+- A same-process copied/shared/shared/copied benchmark checks every frame's
+  pixels and padding outside timing, verifies the chosen path actually ran, and
+  retains all measured stalls. Two warmups and eight measured frames per block.
+  Native clear+readback averages: 750x1624 copied247.30ms/shared20.59ms (12.01x);
+  1125x2436 copied523.98ms/shared26.62ms (19.68x). Both copied control blocks
+  are much slower than both shared blocks. Public raw samples and binary hashes:
+  `tools/native-gl/evidence/shared-readback-nvidia-20261102.json`.
+  This measures the transfer step, not desktop/game FPS, CPU emulation speed,
+  Intel/AMD hardware performance or iPhone-X parity. Full compositor API/format/
+  context compatibility and integration remain required before default use.
+
 Target: boot the user's iPhone X iOS 16.7.16 (20H392) into a usable interface, with SSH, Sileo, GPU acceleration and reliable Ethernet. Work is active; the target is not complete.
 
 ## Verified on 2026-10-31
