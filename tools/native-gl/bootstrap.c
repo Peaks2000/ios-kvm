@@ -17,6 +17,7 @@ int ios_kvm_native_gl_environment(void) {
       setenv("IOS_KVM_NATIVE_GL_PORT", IOS_KVM_NATIVE_PORT, 1) ||
       setenv("IOS_KVM_NATIVE_GL_TOKEN_FILE", IOS_KVM_NATIVE_TOKEN_FILE, 1) ||
       setenv("IOS_KVM_NATIVE_SHARED", "1", 1) ||
+      setenv("IOS_KVM_NATIVE_TRACE_ERRORS", "1", 1) ||
       setenv("IOS_KVM_NATIVE_GL_CHECK_EVERY_CALL", "0", 1)) {
     perror("ios-kvm native compositor environment");
     return 0;

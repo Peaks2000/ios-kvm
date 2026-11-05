@@ -3,7 +3,11 @@ static _Thread_local uint32_t ng_saved_errors;
 static _Thread_local GLenum ng_saved_extra_error;
 static int ng_trace_driver_errors;
 static _Thread_local unsigned ng_traced_driver_errors;
+static _Thread_local uint32_t ng_error_opcode;
 static void ng_error_save(GLenum error) {
+  if (error && ng_trace_driver_errors && ng_traced_driver_errors++ < 64)
+    fprintf(stderr, "native GLES recorded error %#x after opcode %#x\n", error,
+            ng_error_opcode);
   if (error >= 0x500 && error < 0x520)
     ng_saved_errors |= UINT32_C(1) << (error - 0x500);
   else if (error)
@@ -38,7 +42,7 @@ static GLenum ng_error_get(void) {
   ng_saved_extra_error = 0;
   return error;
 }
-static void ng_errors_after_record(uint32_t opcode) {
+static void ng_errors_after_record(void) {
   if (!ng_trace_driver_errors)
     return;
   for (unsigned i = 0; i < 32; i++) {
@@ -46,8 +50,5 @@ static void ng_errors_after_record(uint32_t opcode) {
     if (!error)
       break;
     ng_error_save(error);
-    if (ng_traced_driver_errors++ < 64)
-      fprintf(stderr, "native GLES driver error %#x after opcode %#x\n", error,
-              opcode);
   }
 }

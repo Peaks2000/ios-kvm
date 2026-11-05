@@ -1,0 +1,151 @@
+{
+  "date": "2026-11-05",
+  "scope": "Enabled-attribute API query latency through the proxy and EAGL macro dispatch",
+  "renderer": "NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2",
+  "guest_uid": 501,
+  "method": "Driver/cached/cached/driver order, one warmup and six measured samples per block, 32 queries per sample, every result checked against enabled state",
+  "hashes": {
+    "libios-kvm-native-gl.dylib": "5e86c6427ca0726837af3f91c61f7c1e0a32aab41eba399ce7e5acad015ad482",
+    "guest-check": "4ff1d4249dc9c6d0a7afc4168c1bf6e2210f278a79ee52abf60209a2b66f3a27",
+    "context-race-check": "fb48293f2e51482529cde3c740c17d0710d9294d57b8f67dce15afeaafb025c9",
+    "server": "59821e56fa99493903b352b4e9c2aec6fd21b504524904cd23ddb64b55c2d780",
+    "guest-exec": "f76d6d471a68a36c8e92d1e3efd6760b1c075789a2e87e857b5a3c2999585d0c",
+    "eagl-check": "a2d403261cce0353c83a90d53e4c7c227ba23f7c99107a9613c2d142c2fafb0c",
+    "eagl-coverage/libhakios-native-eagl.dylib": "83db27f8dc503d20a385878a532ea1f8395a3e4d17fcdd64c81c2594357bc5f1"
+  },
+  "series": {
+    "proxy": {
+      "queried_mean_us": 3214.1223958333335,
+      "cached_mean_us": 3.5078125,
+      "blocks": [
+        {
+          "cached": false,
+          "queries_per_sample": 32,
+          "warmup_ns": [
+            105618000
+          ],
+          "measured_ns": [
+            102562000,
+            99496000,
+            96068000,
+            104366000,
+            94149000,
+            112375000
+          ]
+        },
+        {
+          "cached": true,
+          "queries_per_sample": 32,
+          "warmup_ns": [
+            76000
+          ],
+          "measured_ns": [
+            66000,
+            66000,
+            117000,
+            111000,
+            66000,
+            65000
+          ]
+        },
+        {
+          "cached": true,
+          "queries_per_sample": 32,
+          "warmup_ns": [
+            66000
+          ],
+          "measured_ns": [
+            65000,
+            498000,
+            71000,
+            66000,
+            66000,
+            90000
+          ]
+        },
+        {
+          "cached": false,
+          "queries_per_sample": 32,
+          "warmup_ns": [
+            100012000
+          ],
+          "measured_ns": [
+            106150000,
+            100511000,
+            106785000,
+            108610000,
+            99248000,
+            103903000
+          ]
+        }
+      ]
+    },
+    "eagl": {
+      "queried_mean_us": 3151.6354166666665,
+      "cached_mean_us": 3.9973958333333335,
+      "blocks": [
+        {
+          "cached": false,
+          "queries_per_sample": 32,
+          "warmup_ns": [
+            107037000
+          ],
+          "measured_ns": [
+            103174000,
+            102897000,
+            106774000,
+            107459000,
+            99346000,
+            103207000
+          ]
+        },
+        {
+          "cached": true,
+          "queries_per_sample": 32,
+          "warmup_ns": [
+            213000
+          ],
+          "measured_ns": [
+            487000,
+            109000,
+            92000,
+            91000,
+            90000,
+            90000
+          ]
+        },
+        {
+          "cached": true,
+          "queries_per_sample": 32,
+          "warmup_ns": [
+            90000
+          ],
+          "measured_ns": [
+            100000,
+            96000,
+            106000,
+            91000,
+            91000,
+            92000
+          ]
+        },
+        {
+          "cached": false,
+          "queries_per_sample": 32,
+          "warmup_ns": [
+            96219000
+          ],
+          "measured_ns": [
+            96022000,
+            100759000,
+            95923000,
+            95680000,
+            96868000,
+            102119000
+          ]
+        }
+      ]
+    }
+  },
+  "host_instrumentation": "ASan/UBSan with driver leak detection disabled"
+}

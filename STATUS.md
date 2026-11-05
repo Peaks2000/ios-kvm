@@ -1,5 +1,38 @@
 # Local development status
 
+## November 5 enabled-attribute query cache
+
+- The EAGL drawing helpers repeatedly query enabled vertex attributes. The proxy
+  already owns the enable/disable and VAO state, so these queries now return that
+  tracked value. Driver queries remain available through
+  IOS_KVM_NATIVE_VERTEX_STATE_CACHE=0. Regression coverage toggles attributes
+  across VAO switches and verifies the resulting rendered pixels.
+- Same-process driver/cached/cached/driver measurements use32 queries per sample,
+  one warmup and six measured samples per block, with value parity checked for
+  every query. NVIDIA direct-proxy means are3214.12µs/query and3.51µs/query.
+  EAGL macro dispatch means are3151.64µs/query and4.00µs/query. Public raw samples
+  and binary hashes are in
+  tools/native-gl/evidence/vertex-state-nvidia-20261105.json. These timings
+  measure the enabled-state query API. Desktop presentation-rate comparisons
+  still require controlled gesture measurements.
+- Both November5 NVIDIA and LLVMPIPE suites pass as UID/GID501, using ASan/UBSan
+  hosts. Software also exercises per-call EAGL diagnostics. Receipts are
+  `.local/native-gl-api/vertex-cache-{nvidia,software}-20261105`.
+- A fresh180-second native compositor trial completed, reached the home screen
+  and restored VirGL. Its images retain skew, colour stripes and missing
+  regions. Expanded trace capture now includes proxy-generated GL errors as
+  well as native driver errors. A further120-second trial completed with that
+  trace and recorded no GL errors. Both trials restored their original
+  configurations, removed guest files and stopped their native servers.
+  Receipts are `compositor-vertex-cache-20261105` and
+  `compositor-validation-errors-20261105` under `.local/native-gl-api`.
+  The broader trace also passes the full NVIDIA suite with the expected
+  validation errors observable and GL errors preserved for callers. Receipt
+  `.local/native-gl-api/vertex-cache-trace-nvidia-20261105`.
+- The strict build passes with explicit ordering for dependency-sensitive
+  implementation headers. Native rendering defects, CPU throughput, physical
+  AMD/Intel validation and comparison against an iPhone X remain open.
+
 ## November 5 checkpoint of native compositor work
 
 - Revalidated the interrupted worktree and saved November2 results. VM and

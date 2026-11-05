@@ -85,6 +85,14 @@ static int ng_vertex_pointer(GLuint index, GLint size, GLenum type,
                              const void *pointer) {
   struct ng_vertex_array *v = ng_vertex_state();
   struct ios_kvm_native_gl_context *c = ng_current();
+  const char *trace = getenv("IOS_KVM_NATIVE_TRACE_ERRORS");
+  if (trace && !strcmp(trace, "1") &&
+      (index >= (GLuint)c->max_attributes || !ng_attribute_bytes(size, type) ||
+       stride < 0))
+    fprintf(stderr,
+            "native GLES rejected vertex declaration index=%u size=%d type=%#x "
+            "stride=%d\n",
+            index, size, type, stride);
   if (index >= (GLuint)c->max_attributes || size < 1 || size > 4 ||
       stride < 0) {
     ng_vertex_error(GL_INVALID_VALUE);
@@ -119,10 +127,18 @@ static int ng_vertex_query(GLuint index, GLenum pname, GLint *params) {
     return 0; /* Let the driver report invalid queries without writing storage.
                */
   struct ng_attribute *a = &v->attributes[index];
-  if (!a->client)
+  if (pname == GL_VERTEX_ATTRIB_ARRAY_ENABLED) {
+    const char *mode = getenv("IOS_KVM_NATIVE_VERTEX_STATE_CACHE");
+    if (mode && !strcmp(mode, "0"))
+      return 0;
+  }
+  if (!a->client && pname != GL_VERTEX_ATTRIB_ARRAY_ENABLED)
     return 0;
   GLint value;
   switch (pname) {
+  case GL_VERTEX_ATTRIB_ARRAY_ENABLED:
+    value = a->enabled;
+    break;
   case GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING:
     value = 0;
     break;

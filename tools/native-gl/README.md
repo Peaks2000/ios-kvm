@@ -101,6 +101,20 @@ Three concurrent EAGL workers verify program identity and commands surviving
 worker exit. This addresses the compositor handoff that previously created
 implicit contexts and invalid program IDs.
 
+Enabled-attribute queries use the state tracked by the proxy's VAO enable and
+disable entry points. `IOS_KVM_NATIVE_VERTEX_STATE_CACHE=0` requests driver
+queries for comparison. `--benchmark-vertex-state` runs driver/cached/cached/
+driver blocks through both the proxy and EAGL. Every result is checked against
+the enabled state, with32 queries per sample and six measured samples after
+one warmup sample per block.
+
+On November5, mean enabled-query latency on the NVIDIA host was3214.12µs
+through driver queries and3.51µs through the proxy cache. EAGL macro dispatch
+measured3151.64µs and4.00µs respectively. The host used ASan/UBSan with driver
+leak detection disabled. Raw timings and binary hashes are recorded in
+`evidence/vertex-state-nvidia-20261105.json`. Desktop presentation-rate
+comparisons remain a separate verification task.
+
 ## Temporary compositor trial
 
 The explicit trial tool deploys a private bundle, changes backboardd's runtime
@@ -108,6 +122,9 @@ injection, observes rendering, and restores the saved configuration. It arms a
 guest watchdog and confirms its process is alive before switching. Host-side GL
 error tracing preserves errors for callers. Bundle hashes and screenshots are
 saved with the result.
+The trace includes errors raised by proxy validation and errors reported by
+the native driver. A120-second November5 trial completed with that broader
+trace enabled and restored its saved configuration. Rendering defects persist.
 
 ```sh
 python3 tools/native-gl/try-compositor.py \

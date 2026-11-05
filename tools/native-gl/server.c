@@ -119,6 +119,7 @@ static void *ng_serve(void *argument) {
         status = -1;
         break;
       }
+      ng_error_opcode = record.opcode;
       if (ng_dispatch(record.opcode, commands + at, record.bytes, output,
                       batch.reply_capacity, &used)) {
         fprintf(
@@ -128,7 +129,7 @@ static void *ng_serve(void *argument) {
         status = -1;
         break;
       }
-      ng_errors_after_record(record.opcode);
+      ng_errors_after_record();
       at += padded;
     }
     struct ng_reply reply = {NG_MAGIC, sequence, (uint32_t)status,

@@ -202,7 +202,7 @@ with tempfile.TemporaryDirectory(prefix='native-desktop-', dir=root / '.local') 
                     raise RuntimeError('Compositor reached unsupported/error path: ' + marker)
             if 'native GLES: rejected' in host_output:
                 raise RuntimeError('Native host rejected a compositor request')
-            if 'native GLES driver error' in host_output:
+            if 'native GLES driver error' in host_output or 'native GLES recorded error' in host_output:
                 raise RuntimeError('Native driver reported a compositor GL error')
             if not captured and time.monotonic() - started > 20:
                 screenshot('during')

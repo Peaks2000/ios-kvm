@@ -23,6 +23,7 @@ p.add_argument('--guest-uid', type=int, choices=(0, 501), default=0, help='Run t
 p.add_argument('--shared-ram', action='store_true', help='Opt into retained IOSurface readback through this VM RAM')
 p.add_argument('--benchmark', action='store_true', help='Measure copied/shared readback ABBA at two phone resolutions')
 p.add_argument('--benchmark-pixel-state', action='store_true', help='Benchmark shared reads with state queries versus context shadowing')
+p.add_argument('--benchmark-vertex-state', action='store_true', help='Compare driver and cached enabled-attribute queries')
 a = p.parse_args()
 if a.eagl_check_every_call:
     a.eagl = True
@@ -73,6 +74,7 @@ receipt = {'scope': 'Native GLES API correctness and optional readback benchmark
            'shared_ram_requested': a.shared_ram, 'benchmark_requested': a.benchmark,
            'pixel_state_benchmark_requested': a.benchmark_pixel_state,
            'eagl_per_call_checks_requested': a.eagl_check_every_call, 'guest_uid_requested': a.guest_uid}
+receipt['vertex_state_benchmark_requested'] = a.benchmark_vertex_state
 error = None
 with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local') as directory, \
         (a.output / 'server.log').open('w') as server_log, \
@@ -135,6 +137,7 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
                    f'IOS_KVM_NATIVE_GL_TOKEN_FILE={shlex.quote(guest_path + "/token")} '
                    f'IOS_KVM_NATIVE_SHARED={int(a.shared_ram)} IOS_KVM_NATIVE_BENCH={int(a.benchmark)} '
                    f'IOS_KVM_NATIVE_BENCH_PIXEL_STATE={int(a.benchmark_pixel_state)} '
+                   f'IOS_KVM_NATIVE_BENCH_VERTEX_STATE={int(a.benchmark_vertex_state)} '
                    f'IOS_KVM_NATIVE_GL_CHECK_EVERY_CALL={int(a.eagl_check_every_call)}; '
                    f'{launch}{shlex.quote(guest_path + "/guest-check")}')
         result = subprocess.run([*ssh, command], cwd=root, capture_output=True, text=True, timeout=180 if a.benchmark else 45)
@@ -145,6 +148,14 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
         for marker in ('Native client vertices PASSED','Native debug labels PASSED'):
             if marker not in output:
                 raise RuntimeError('guest coverage did not finish: '+marker)
+        if a.benchmark_vertex_state:
+            if 'Native vertex state benchmark PASSED' not in output:
+                raise RuntimeError('guest vertex-state benchmark did not finish')
+            samples = [json.loads(line.split(': ', 1)[1]) for line in output.splitlines()
+                       if line.startswith('Native vertex state benchmark: ')]
+            if len(samples) != 28:
+                raise RuntimeError('incomplete vertex-state benchmark samples')
+            (a.output / 'vertex-state-benchmark.json').write_text(json.dumps(samples, indent=2) + '\n')
         if a.guest_uid == 501 and 'Native guest identity: uid=501 gid=501' not in output:
             raise RuntimeError('guest diagnostic identity was not verified')
         if a.shared_ram and 'Native shared IOSurface check PASSED' not in output:
@@ -184,6 +195,14 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
             for marker in ('Native client vertices PASSED','Native debug labels PASSED','Native EAGL worker handoff PASSED'):
                 if marker not in eagl_output:
                     raise RuntimeError('isolated EAGL coverage did not finish: '+marker)
+            if a.benchmark_vertex_state:
+                if 'Native vertex state benchmark PASSED' not in eagl_output:
+                    raise RuntimeError('EAGL vertex-state benchmark did not finish')
+                samples = [json.loads(line.split(': ', 1)[1]) for line in eagl_output.splitlines()
+                           if line.startswith('Native vertex state benchmark: ')]
+                if len(samples) != 28:
+                    raise RuntimeError('incomplete EAGL vertex-state benchmark samples')
+                (a.output / 'eagl-vertex-state-benchmark.json').write_text(json.dumps(samples, indent=2) + '\n')
             if a.guest_uid == 501 and 'Native guest identity: uid=501 gid=501' not in eagl_output:
                 raise RuntimeError('guest EAGL identity was not verified')
             if a.shared_ram and 'Native EAGL shared IOSurface check PASSED' not in eagl_output:

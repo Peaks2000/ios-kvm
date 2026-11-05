@@ -1,6 +1,51 @@
 #ifndef NG_VERTEX_SHADER
 #define NG_VERTEX_SHADER shader
 #endif
+#include <time.h>
+static uint64_t vertex_query_time_ns(void) {
+  struct timespec value;
+  require(clock_gettime(CLOCK_MONOTONIC, &value) == 0, "vertex query clock");
+  return (uint64_t)value.tv_sec * 1000000000 + value.tv_nsec;
+}
+static void vertex_query_benchmark(void) {
+  const char *enabled = getenv("IOS_KVM_NATIVE_BENCH_VERTEX_STATE");
+  if (!enabled || strcmp(enabled, "1"))
+    return;
+  const char *original = getenv("IOS_KVM_NATIVE_VERTEX_STATE_CACHE");
+  char *restore = original ? strdup(original) : NULL;
+  require(!original || restore, "vertex benchmark environment copy");
+  for (unsigned block = 0; block < 4; block++) {
+    int cached = block == 1 || block == 2;
+    require(
+        setenv("IOS_KVM_NATIVE_VERTEX_STATE_CACHE", cached ? "1" : "0", 1) == 0,
+        "vertex benchmark mode");
+    for (unsigned sample = 0; sample < 7; sample++) {
+      GLint values[32];
+      uint64_t start = vertex_query_time_ns();
+      for (unsigned query = 0; query < 32; query++)
+        glGetVertexAttribiv(0, GL_VERTEX_ATTRIB_ARRAY_ENABLED, values + query);
+      uint64_t elapsed = vertex_query_time_ns() - start;
+      for (unsigned query = 0; query < 32; query++)
+        require(values[query] == GL_TRUE,
+                "vertex query benchmark driver parity");
+      printf(
+          "Native vertex state benchmark: {\"block\":%u,\"cached\":%s,"
+          "\"sample\":%u,\"warmup\":%s,\"queries\":32,\"elapsed_ns\":%llu}\n",
+          block, cached ? "true" : "false", sample,
+          sample == 0 ? "true" : "false", (unsigned long long)elapsed);
+    }
+  }
+  if (restore)
+    require(setenv("IOS_KVM_NATIVE_VERTEX_STATE_CACHE", restore, 1) == 0,
+            "restore vertex benchmark mode");
+  else
+    require(unsetenv("IOS_KVM_NATIVE_VERTEX_STATE_CACHE") == 0,
+            "restore unset vertex benchmark mode");
+  free(restore);
+  require(glGetError() == GL_NO_ERROR, "vertex benchmark GL status");
+  puts("Native vertex state benchmark PASSED (queried/cached/cached/queried, "
+       "driver parity)");
+}
 static void client_vertex_check(void) {
   struct vertex {
     GLfloat position[2];
@@ -79,6 +124,13 @@ static void client_vertex_check(void) {
     unsigned which = frame & 1, kind = frame % 6;
     glBindVertexArray(vaos[which]);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    GLint enabled = -1;
+    glDisableVertexAttribArray(1);
+    glGetVertexAttribiv(1, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &enabled);
+    require(enabled == GL_FALSE, "disabled attribute query follows VAO state");
+    glEnableVertexAttribArray(1);
+    glGetVertexAttribiv(1, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &enabled);
+    require(enabled == GL_TRUE, "enabled attribute query follows VAO state");
     GLubyte expected[] = {31 + frame * 11, 183 - frame * 7, 77 + frame * 5,
                           255};
     for (unsigned i = 0; i < 8; i++) {
@@ -158,4 +210,5 @@ static void client_vertex_check(void) {
   puts("Native client vertices PASSED (12 frames, fresh snapshots, "
        "interleaving, normalized colours, VAOs, array/byte/short/int/EBO "
        "draws, restart, local pointer queries)");
+  vertex_query_benchmark();
 }
