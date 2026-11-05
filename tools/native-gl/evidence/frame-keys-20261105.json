@@ -118,9 +118,10 @@
       "log_sha256": "bed0fc9178c81c55e4dd38b44c60efb5a0547c7c406a80d9e936f5264d50c5a1"
     },
     {
-      "check": "software",
+      "check": "software-verified",
       "passed": true,
-      "log_sha256": "5f42c0657fdae3ae4191bd06383f217cf846ef8327de5a7c52d5eb377b50afd8"
+      "log_sha256": "b46dd8e071db6837d5548631b2a294119312f4141fef2e95f0a2cf9f764ac0d1",
+      "renderer": "llvmpipe (LLVM 22.1.8, 256 bits)"
     },
     {
       "check": "window-nvidia-normal-retry",
@@ -133,14 +134,16 @@
       "log_sha256": "aae6c60754fb258af898122cb9e05d3a45dea44d9e59a48a37f08bc831c1651a"
     },
     {
-      "check": "window-software-normal-retry",
+      "check": "window-software-normal-verified",
       "passed": true,
-      "log_sha256": "43c8ce4434471f74913dfd8d6ed3db95ea3a13c15507cda1da67d4956080be5a"
+      "log_sha256": "123c01141c60140efc1c06ddc4276da22cf720460bc9ce9a8d47f97e2832ada3",
+      "renderer": "llvmpipe (LLVM 22.1.8, 256 bits)"
     },
     {
-      "check": "window-software-large-retry",
+      "check": "window-software-large-verified",
       "passed": true,
-      "log_sha256": "43c8ce4434471f74913dfd8d6ed3db95ea3a13c15507cda1da67d4956080be5a"
+      "log_sha256": "123c01141c60140efc1c06ddc4276da22cf720460bc9ce9a8d47f97e2832ada3",
+      "renderer": "llvmpipe (LLVM 22.1.8, 256 bits)"
     }
   ],
   "desktop_key_join": {
@@ -192,6 +195,10 @@
     {
       "check": "first window launch in this checkpoint",
       "reason": "An invalid local SDL EGL-library override prevented initialization. Retried without that override. All four window checks above passed."
+    },
+    {
+      "check": "Originally labeled software host fixtures",
+      "reason": "LIBGL_ALWAYS_SOFTWARE alone selected NVIDIA through GLVND. Host-only software entries above were replaced with reruns that explicitly selected the Mesa vendor and reported llvmpipe. Existing guest software checks used the correct profile."
     }
   ],
   "limits": [
