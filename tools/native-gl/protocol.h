@@ -8,8 +8,11 @@
 #error "native GL wire encoding requires a little-endian peer"
 #endif
 #define NG_MAGIC UINT32_C(0x4e474c33)
-#define NG_VERSION 7
+#define NG_VERSION 8
 #define NG_FEATURE_SHARED_READ UINT32_C(1)
+/* Only a batch ending in retained NG_READ_SHARED may suppress its reply.
+ * Completion and errors for that read are published through the kernel cell. */
+#define NG_BATCH_SURFACE_ASYNC UINT32_C(0x80000000)
 struct ng_ack {
   uint32_t magic, features;
 };

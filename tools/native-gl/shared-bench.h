@@ -11,7 +11,12 @@ static void shared_surface_benchmark(void) {
     return;
   const char *state_mode = getenv("IOS_KVM_NATIVE_BENCH_PIXEL_STATE");
   int state_bench = state_mode && !strcmp(state_mode, "1");
-  const char *original = getenv("IOS_KVM_NATIVE_STATE_CACHE");
+  const char *async_mode = getenv("IOS_KVM_NATIVE_BENCH_ASYNC_READBACK");
+  int async_bench = async_mode && !strcmp(async_mode, "1");
+  require(!state_bench || !async_bench, "one readback benchmark mode");
+  const char *variable = async_bench ? "IOS_KVM_NATIVE_ASYNC_READBACK"
+                                    : "IOS_KVM_NATIVE_STATE_CACHE";
+  const char *original = getenv(variable);
   char *restore = original ? strdup(original) : NULL;
   require(!original || restore, "benchmark environment copy");
   const unsigned widths[] = {750, 1125}, heights[] = {1624, 2436};
@@ -55,19 +60,21 @@ static void shared_surface_benchmark(void) {
     glPixelStorei(GL_PACK_SKIP_PIXELS, 0);
     for (unsigned block = 0; block < 4; block++) {
       int middle = block == 1 || block == 2;
-      int shared = state_bench || middle; /* copied/shared/shared/copied */
-      if (state_bench)
-        require(setenv("IOS_KVM_NATIVE_STATE_CACHE", middle ? "1" : "0", 1) ==
-                    0,
+      int shared = state_bench || async_bench || middle;
+      if (state_bench || async_bench)
+        require(setenv(variable, middle ? "1" : "0", 1) == 0,
                 "benchmark state mode");
       const char *current_mode = getenv("IOS_KVM_NATIVE_STATE_CACHE");
       int cached = !current_mode || strcmp(current_mode, "0");
+      const char *current_async = getenv("IOS_KVM_NATIVE_ASYNC_READBACK");
+      int asynchronous = shared && current_async && !strcmp(current_async, "1");
       ios_kvm_native_gl_readback_surface(lease,
                                          shared ? IOSurfaceGetID(surface) : 0);
       for (unsigned frame = 0; frame < 10; frame++) {
         require(IOSurfaceLock(surface, 0, NULL) == 0, "benchmark writer lock");
         unsigned red = 13 + block * 37 + frame;
         uint64_t count = ios_kvm_native_gl_shared_submissions();
+        uint64_t async_count = ios_kvm_native_gl_async_submissions();
         void *previous = ios_kvm_native_gl_readback_set(lease);
         uint64_t start = shared_bench_ns();
         glClearColor(red / 255.0f, 61 / 255.0f, 173 / 255.0f, 1);
@@ -79,9 +86,13 @@ static void shared_surface_benchmark(void) {
         require(ios_kvm_native_gl_shared_submissions() - count ==
                     (unsigned)shared,
                 "benchmark actual readback path");
-        require(glGetError() == GL_NO_ERROR, "benchmark GPU status");
+        require(ios_kvm_native_gl_async_submissions() - async_count ==
+                    (unsigned)asynchronous,
+                "benchmark actual asynchronous submission path");
         require(IOSurfaceLock(surface, kIOSurfaceLockReadOnly, NULL) == 0,
                 "benchmark CPU reader lock");
+        uint64_t completed = shared_bench_ns() - start;
+        require(glGetError() == GL_NO_ERROR, "benchmark GPU status");
         /* Full image and padding validation is outside the measured interval.
          */
         for (unsigned y = 0; y < h; y++)
@@ -95,11 +106,13 @@ static void shared_surface_benchmark(void) {
         IOSurfaceUnlock(surface, kIOSurfaceLockReadOnly, NULL);
         printf("Native readback benchmark: {\"width\":%u,\"height\":%u,"
                "\"block\":%u,\"shared\":%s,\"state_cache\":%s,\"frame\":%u,"
-               "\"warmup\":%s,"
-               "\"elapsed_ns\":%llu}\n",
+               "\"warmup\":%s,\"asynchronous\":%s,"
+               "\"elapsed_ns\":%llu,\"completed_ns\":%llu}\n",
                w, h, block, shared ? "true" : "false",
                cached ? "true" : "false", frame,
-               frame < 2 ? "true" : "false", (unsigned long long)elapsed);
+               frame < 2 ? "true" : "false",
+               asynchronous ? "true" : "false", (unsigned long long)elapsed,
+               (unsigned long long)completed);
         fflush(stdout);
         usleep(2000);
       }
@@ -110,12 +123,12 @@ static void shared_surface_benchmark(void) {
     glDeleteTextures(1, &tex);
   }
   glPixelStorei(GL_PACK_ROW_LENGTH, 0);
-  if (state_bench) {
+  if (state_bench || async_bench) {
     if (restore)
-      require(setenv("IOS_KVM_NATIVE_STATE_CACHE", restore, 1) == 0,
+      require(setenv(variable, restore, 1) == 0,
               "restore benchmark environment");
     else
-      require(unsetenv("IOS_KVM_NATIVE_STATE_CACHE") == 0,
+      require(unsetenv(variable) == 0,
               "restore unset benchmark environment");
   }
   free(restore);

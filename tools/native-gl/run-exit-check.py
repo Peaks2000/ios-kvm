@@ -25,6 +25,7 @@ p.add_argument('--profile', type=Path, required=True)
 p.add_argument('--output', type=Path, required=True)
 p.add_argument('--port', type=int, default=6758)
 p.add_argument('--sanitize', action='store_true')
+p.add_argument('--async-readback', action='store_true')
 a = p.parse_args()
 if not 1024 <= a.port <= 65535:
     p.error('invalid port')
@@ -62,7 +63,7 @@ server = producer = observer = None
 guest = None
 victim_pid = None
 receipt = {'scope': 'Native retained readback across temporary guest process exit; not desktop or performance',
-           'selected': selected, 'sanitized': a.sanitize}
+           'selected': selected, 'sanitized': a.sanitize, 'async_readback': a.async_readback}
 failure = None
 notify_read, notify_write = os.pipe()
 
@@ -109,7 +110,8 @@ with tempfile.TemporaryDirectory(prefix='native-exit-', dir=root / '.local') as 
             remote(f'umask 077; cat > {path} && chmod {mode} {path}', input=source.read_bytes(),
                    stdout=deploy_log, stderr=deploy_log, check=True)
         env = (f'export IOS_KVM_NATIVE_GL_HOST=10.0.2.2 IOS_KVM_NATIVE_GL_PORT={a.port} '
-               f'IOS_KVM_NATIVE_GL_TOKEN_FILE={shlex.quote(guest + "/token")} IOS_KVM_NATIVE_SHARED=1; ')
+               f'IOS_KVM_NATIVE_GL_TOKEN_FILE={shlex.quote(guest + "/token")} IOS_KVM_NATIVE_SHARED=1 '
+               f'IOS_KVM_NATIVE_ASYNC_READBACK={int(a.async_readback)}; ')
         producer = subprocess.Popen([*ssh, env + 'exec ' + shlex.quote(guest + '/exit-check')],
                                     cwd=root, stdout=producer_log, stderr=producer_log)
         if not select.select([notify_read], [], [], 30)[0] or os.read(notify_read, 1) != b'R':
@@ -117,6 +119,11 @@ with tempfile.TemporaryDirectory(prefix='native-exit-', dir=root / '.local') as 
         status_path = Path(f'/proc/{server.pid}/status')
         wait_until(lambda: re.search(r'^State:\s+T', status_path.read_text(), re.M),
                    server, 'host pause')
+        if a.async_readback:
+            wait_until(lambda: 'submission returned before host completion' in
+                       (a.output / 'producer.log').read_text(), producer,
+                       'nonblocking retained submission')
+            receipt['submission_returned_while_host_paused'] = True
         match = re.search(r'Native exit producer: pid=(\d+) surface=(\d+)',
                           (a.output / 'producer.log').read_text())
         if not match:

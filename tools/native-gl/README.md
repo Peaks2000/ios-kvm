@@ -179,11 +179,36 @@ retains the kernel-backed surface independently of the requesting task until
 the host publishes completion. Wrapped user memory is ineligible. The host
 validates RAM ownership/seals, ranges, segment overlaps, completion alignment,
 dimensions and output bounds before writing; it preserves row padding and GL
-errors. This first version still waits for the normal RPC acknowledgement. It
-removes the bulk socket transfer and guest row copy, but is not asynchronous
-submission or GPU scanout. A failed request after obtaining a kernel hold never
+errors. The default shared mode waits for the normal RPC acknowledgement.
+`IOS_KVM_NATIVE_ASYNC_READBACK=1` instead sends the retained read and returns
+without its socket reply. The host executes each context's stream in order and
+publishes success or failure in the existing kernel completion cell. A CPU
+consumer must lock the IOSurface before accessing its pixels. Untagged reads,
+queries and `glFinish` keep their synchronous contracts. Wire version 8 rejects
+older peers, and only batches ending in a retained read may suppress a reply.
+The copied fallback remains available before a kernel hold is obtained.
+A failed request after obtaining a kernel hold never
 falls back to an unretained write. Host loss can leave a bounded retained surface
 until VM shutdown; no unsafe cancellation is attempted.
+
+This path permits CPU/GPU overlap, while still reading pixels back into guest
+RAM. GPU-resident display presentation remains integration work. Exercise the
+opt-in with `run-check.py --shared-ram --async-readback`, or use
+`try-compositor.py --async-readback` for the temporary, self-restoring compositor
+experiment. The normal launcher continues to select its existing backend.
+
+`run-check.py --shared-ram --async-readback --benchmark-async-readback` compares
+synchronous/asynchronous/asynchronous/synchronous retained reads at both phone
+resolutions. `elapsed_ns` ends when the readback call returns. `completed_ns`
+includes unlocking and reacquiring the IOSurface CPU reader lock, before any
+GPU-status query. Both modes validate all fresh pixels and padding after the
+measured interval, and verify actual asynchronous submission counts.
+The November 5 NVIDIA run measured mean submission times of 11.61/1.29 ms at
+750x1624 and 22.35/1.52 ms at 1125x2436 for synchronous/asynchronous modes.
+Completed-pixel times were 11.72/9.87 ms and 22.47/19.67 ms, respectively.
+The host used ASan/UBSan with driver leak detection disabled. Raw samples and
+binary hashes are in `evidence/async-readback-nvidia-20261105.json`.
+Desktop frame times and physical AMD/Intel hardware remain unverified here.
 
 Run the retained-surface and isolated EAGL checks with `--shared-ram --eagl`.
 This requires a running VM with shared sealed RAM and the matching kernel pin/
@@ -202,6 +227,10 @@ padding; after the observer releases, the surface ID disappears. This passes
 on NVIDIA and software rendering with ASan/UBSan hosts (driver leak detection
 disabled). The cached-state client also passes on NVIDIA. This tests producer
 exit at the paused write boundary, not every possible host/guest failure point.
+
+With `run-exit-check.py --async-readback`, the producer must also report that
+submission returned while the host is paused, before it is killed. This checks
+that early return and independent surface lifetime hold together.
 
 ```sh
 python3 tools/native-gl/run-exit-check.py --sanitize \

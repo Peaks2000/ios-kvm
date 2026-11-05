@@ -55,6 +55,25 @@ static int ng_dispatch(uint32_t opcode, const uint8_t *data, size_t size,
     return ng_pointer(opcode, data, size, output, capacity, used);
   }
 }
+/* Check the framing and final retained read before executing an asynchronous
+ * batch. Dispatch rejects an earlier output-producing command. */
+static int ng_async_batch(const uint8_t *data, size_t size) {
+  size_t at = 0;
+  while (at < size) {
+    if (size - at < sizeof(struct ng_record))
+      return 0;
+    struct ng_record record;
+    memcpy(&record, data + at, sizeof(record));
+    at += sizeof(record);
+    size_t padded = ((size_t)record.bytes + 7) & ~(size_t)7;
+    if (padded > size - at)
+      return 0;
+    at += padded;
+    if (record.opcode == NG_READ_SHARED)
+      return at == size;
+  }
+  return 0;
+}
 static void *ng_serve(void *argument) {
   int fd = (int)(intptr_t)argument;
   ng_socket_options(fd);
@@ -93,15 +112,20 @@ static void *ng_serve(void *argument) {
     struct ng_batch batch;
     if (ng_io(fd, &batch, sizeof(batch), 0))
       break;
+    int asynchronous = !!(batch.reply_capacity & NG_BATCH_SURFACE_ASYNC);
+    batch.reply_capacity &= ~NG_BATCH_SURFACE_ASYNC;
     if (batch.magic != NG_MAGIC || sequence == UINT32_MAX ||
         batch.sequence != ++sequence || !batch.bytes ||
-        batch.bytes > NG_LIMIT || batch.reply_capacity > NG_LIMIT)
+        batch.bytes > NG_LIMIT || batch.reply_capacity > NG_LIMIT ||
+        (asynchronous && (batch.reply_capacity != 4 || !ng_ram.address)))
       break;
     commands = malloc(batch.bytes);
     output = calloc(1, batch.reply_capacity ? batch.reply_capacity : 1);
     if (!commands || !output)
       break;
     if (ng_io(fd, commands, batch.bytes, 0))
+      break;
+    if (asynchronous && !ng_async_batch(commands, batch.bytes))
       break;
     size_t at = 0, used = 0;
     int status = 0;
@@ -134,8 +158,9 @@ static void *ng_serve(void *argument) {
     }
     struct ng_reply reply = {NG_MAGIC, sequence, (uint32_t)status,
                              (uint32_t)used};
-    if (ng_io(fd, &reply, sizeof(reply), 1) ||
-        (!status && ng_io(fd, output, used, 1)))
+    if (!asynchronous &&
+        (ng_io(fd, &reply, sizeof(reply), 1) ||
+         (!status && ng_io(fd, output, used, 1))))
       break;
     free(commands);
     free(output);

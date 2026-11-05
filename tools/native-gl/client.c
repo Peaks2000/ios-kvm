@@ -228,8 +228,8 @@ static struct ios_kvm_native_gl_context *ng_current(void) {
   }
   return c;
 }
-static size_t ng_flush_context(struct ios_kvm_native_gl_context *c,
-                               void *output, size_t capacity) {
+static size_t ng_submit_context(struct ios_kvm_native_gl_context *c,
+                               void *output, size_t capacity, int asynchronous) {
   if (!c->used) {
     if (capacity)
       ng_failure("empty query");
@@ -238,19 +238,27 @@ static size_t ng_flush_context(struct ios_kvm_native_gl_context *c,
   if (capacity > NG_LIMIT || c->sequence == UINT32_MAX)
     ng_failure("request limit");
   struct ng_batch batch = {NG_MAGIC, ++c->sequence, (uint32_t)c->used,
-                           (uint32_t)capacity};
+                           (uint32_t)capacity |
+                               (asynchronous ? NG_BATCH_SURFACE_ASYNC : 0)};
   struct ng_reply reply;
   if (ng_io(c->fd, &batch, sizeof(batch), 1) ||
-      ng_io(c->fd, c->commands, c->used, 1) ||
-      ng_io(c->fd, &reply, sizeof(reply), 0))
+      ng_io(c->fd, c->commands, c->used, 1))
     ng_failure("batch transport");
+  c->used = 0;
+  if (asynchronous)
+    return 0;
+  if (ng_io(c->fd, &reply, sizeof(reply), 0))
+    ng_failure("batch reply transport");
   if (reply.magic != NG_MAGIC || reply.sequence != c->sequence ||
       reply.status || reply.bytes > capacity)
     ng_failure("batch rejected");
   if (ng_io(c->fd, output, reply.bytes, 0))
     ng_failure("query output");
-  c->used = 0;
   return reply.bytes;
+}
+static size_t ng_flush_context(struct ios_kvm_native_gl_context *c,
+                               void *output, size_t capacity) {
+  return ng_submit_context(c, output, capacity, 0);
 }
 static size_t ng_flush(void *output, size_t capacity) {
   return ng_flush_context(ng_current(), output, capacity);

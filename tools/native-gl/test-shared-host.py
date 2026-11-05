@@ -76,7 +76,8 @@ with tempfile.TemporaryDirectory(prefix='native-gl-shared-host-') as directory:
                 return s
 
             def request(*, segments=None, completion=cell, width=1, span=4, stride=4,
-                        disconnect=False, invalid_cell=False, expected=0, fmt=0x80e1, dtype=0x1401):
+                        disconnect=False, invalid_cell=False, expected=0, fmt=0x80e1, dtype=0x1401,
+                        asynchronous=False):
                 if segments is None:
                     segments = [(destination + 32, 2), (destination, 2)]
                 ram[:] = b'\xa5' * len(ram)
@@ -88,9 +89,17 @@ with tempfile.TemporaryDirectory(prefix='native-gl-shared-host-') as directory:
                 commands += record(0x10021, struct.pack('<11Q', *args) +
                                    b''.join(struct.pack('<QQ', *item) for item in segments))
                 with connect() as s:
-                    s.sendall(struct.pack('<IIII', magic, 1, len(commands), 4) + commands)
+                    capacity = 4 | (0x80000000 if asynchronous else 0)
+                    s.sendall(struct.pack('<IIII', magic, 1, len(commands), capacity) + commands)
                     if disconnect:
                         s.shutdown(socket.SHUT_WR)
+                    elif asynchronous:
+                        # A subsequent query must receive its own sequence, with
+                        # no stale acknowledgement from the retained read.
+                        query = scalar('glGetError')
+                        s.sendall(struct.pack('<IIII', magic, 2, len(query), 4) + query)
+                        assert struct.unpack('<IIII', read(s, 16)) == (magic, 2, 0, 4)
+                        assert struct.unpack('<I', read(s, 4))[0] == 0
                     elif invalid_cell:
                         header = struct.unpack('<IIII', read(s, 16))
                         assert header[2] != 0
@@ -115,6 +124,10 @@ with tempfile.TemporaryDirectory(prefix='native-gl-shared-host-') as directory:
 
             request()
             request(disconnect=True)
+            request(asynchronous=True)
+            request(asynchronous=True, disconnect=True)
+            request(asynchronous=True, width=4097, expected=-22)
+            request(asynchronous=True, segments=[(destination, 3), (destination + 2, 1)], expected=-22)
             request(width=4097, expected=-22)
             request(span=5, expected=-22)
             request(fmt=0x1908, dtype=0x140b, expected=-22)

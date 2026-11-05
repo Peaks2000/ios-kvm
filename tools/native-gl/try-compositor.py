@@ -24,6 +24,7 @@ p.add_argument('--profile', type=Path, required=True)
 p.add_argument('--output', type=Path, required=True)
 p.add_argument('--port', type=int, default=6777)
 p.add_argument('--seconds', type=int, default=60, choices=range(15, 301), metavar='15..300')
+p.add_argument('--async-readback', action='store_true')
 a = p.parse_args()
 if not 1024 <= a.port <= 65535:
     p.error('invalid port')
@@ -91,7 +92,8 @@ def config_write(config, log):
     remote(command, stdout=log, stderr=log, check=True)
 
 receipt = {'scope': 'Temporary native compositor trial; not desktop compatibility or performance proof',
-           'selected': selected, 'seconds_requested': a.seconds, 'original_restored': False}
+           'selected': selected, 'seconds_requested': a.seconds, 'original_restored': False,
+           'async_readback_requested': a.async_readback}
 server = None
 guest = None
 original = None
@@ -114,6 +116,7 @@ with tempfile.TemporaryDirectory(prefix='native-desktop-', dir=root / '.local') 
                     '-DHAKIOS_GL=' + json.dumps(mobile + '/' + bridge.name),
                     '-DIOS_KVM_NATIVE_TOKEN_FILE=' + json.dumps(mobile + '/token'),
                     '-DIOS_KVM_NATIVE_PORT=' + json.dumps(str(a.port)),
+                    '-DIOS_KVM_NATIVE_ASYNC_MODE=' + json.dumps(str(int(a.async_readback))),
                     '-install_name', mobile + '/' + injection.name,
                     '-framework', 'CoreFoundation', '-framework', 'IOKit', '-lobjc',
                     str(root / 'vendor/hakios/userland/src/inject.c'),
@@ -212,10 +215,13 @@ with tempfile.TemporaryDirectory(prefix='native-desktop-', dir=root / '.local') 
         receipt.update(observation_finished=True,
                        native_injection_seen='temporary native compositor experiment UID501' in output,
                        native_context_seen='native GLES client:' in host_output,
+                       async_submission_seen='native GLES asynchronous retained submission active' in output,
                        actual_host_renderers=sorted(set(line.split(': ', 1)[1] for line in host_output.splitlines()
                                                         if line.startswith('native GLES client: '))))
         if not receipt['native_injection_seen'] or not receipt['native_context_seen']:
             raise RuntimeError('Native injection/context did not become active during observation')
+        if a.async_readback and not receipt['async_submission_seen']:
+            raise RuntimeError('Asynchronous retained submissions did not become active')
         if receipt['actual_host_renderers'] != [selected.get('renderer')]:
             raise RuntimeError('Native compositor renderer differs from selected profile')
     except Exception as exc:

@@ -21,6 +21,8 @@ p.add_argument('--eagl', action='store_true', help='Also run the isolated EAGL m
 p.add_argument('--eagl-check-every-call', action='store_true', help='Enable native EAGL per-call error diagnostics and check error preservation')
 p.add_argument('--guest-uid', type=int, choices=(0, 501), default=0, help='Run temporary diagnostics as root or the compositor mobile identity')
 p.add_argument('--shared-ram', action='store_true', help='Opt into retained IOSurface readback through this VM RAM')
+p.add_argument('--async-readback', action='store_true', help='Submit retained surface writes without waiting for their RPC reply')
+p.add_argument('--benchmark-async-readback', action='store_true', help='Compare synchronous/asynchronous retained writes including CPU completion')
 p.add_argument('--benchmark', action='store_true', help='Measure copied/shared readback ABBA at two phone resolutions')
 p.add_argument('--benchmark-pixel-state', action='store_true', help='Benchmark shared reads with state queries versus context shadowing')
 p.add_argument('--benchmark-vertex-state', action='store_true', help='Compare driver and cached enabled-attribute queries')
@@ -29,6 +31,12 @@ if a.eagl_check_every_call:
     a.eagl = True
 if a.benchmark_pixel_state:
     a.benchmark = True
+if a.benchmark_async_readback:
+    a.benchmark = True
+if a.benchmark_async_readback and a.benchmark_pixel_state:
+    p.error('choose one readback benchmark mode')
+if a.async_readback and not a.shared_ram:
+    p.error('--async-readback requires --shared-ram')
 if a.benchmark and not a.shared_ram:
     p.error('--benchmark requires --shared-ram')
 if not 1024 <= a.port <= 65535:
@@ -75,6 +83,8 @@ receipt = {'scope': 'Native GLES API correctness and optional readback benchmark
            'pixel_state_benchmark_requested': a.benchmark_pixel_state,
            'eagl_per_call_checks_requested': a.eagl_check_every_call, 'guest_uid_requested': a.guest_uid}
 receipt['vertex_state_benchmark_requested'] = a.benchmark_vertex_state
+receipt['async_readback_requested'] = a.async_readback
+receipt['async_readback_benchmark_requested'] = a.benchmark_async_readback
 error = None
 with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local') as directory, \
         (a.output / 'server.log').open('w') as server_log, \
@@ -137,6 +147,8 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
                    f'IOS_KVM_NATIVE_GL_TOKEN_FILE={shlex.quote(guest_path + "/token")} '
                    f'IOS_KVM_NATIVE_SHARED={int(a.shared_ram)} IOS_KVM_NATIVE_BENCH={int(a.benchmark)} '
                    f'IOS_KVM_NATIVE_BENCH_PIXEL_STATE={int(a.benchmark_pixel_state)} '
+                   f'IOS_KVM_NATIVE_ASYNC_READBACK={int(a.async_readback)} '
+                   f'IOS_KVM_NATIVE_BENCH_ASYNC_READBACK={int(a.benchmark_async_readback)} '
                    f'IOS_KVM_NATIVE_BENCH_VERTEX_STATE={int(a.benchmark_vertex_state)} '
                    f'IOS_KVM_NATIVE_GL_CHECK_EVERY_CALL={int(a.eagl_check_every_call)}; '
                    f'{launch}{shlex.quote(guest_path + "/guest-check")}')

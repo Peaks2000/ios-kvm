@@ -70,6 +70,9 @@ for label, kwargs in [('wrong token', {'secret': bytes(32)}),
     print('Rejected:', label)
 
 cases = [
+    ('async query has no retained read', record(opcode['glGetError']), 0x80000004, 1, None, False),
+    ('async output capacity', record(0x10021), 0x80000008, 1, None, False),
+    ('async read followed by query', record(0x10021) + record(opcode['glGetError']), 0x80000004, 1, None, False),
     ('oversized batch', b'', 0, 1, (16 << 20) + 1, False),
     ('oversized output', record(opcode['glGetError']), (16 << 20) + 1, 1, None, False),
     ('wrong sequence', record(opcode['glGetError']), 4, 2, None, False),

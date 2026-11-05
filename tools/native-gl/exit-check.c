@@ -109,6 +109,13 @@ int main(int argc, char **argv) {
   glClearColor(.25f, .5f, .75f, 1);
   glClear(GL_COLOR_BUFFER_BIT);
   glReadPixels(0, 0, width, height, BGRA, GL_UNSIGNED_BYTE, pixels);
+  const char *async_mode = getenv("IOS_KVM_NATIVE_ASYNC_READBACK");
+  if (async_mode && !strcmp(async_mode, "1")) {
+    puts("Native exit producer: submission returned before host completion");
+    fflush(stdout);
+    for (;;)
+      pause(); /* The test kills us with the retained write still pending. */
+  }
   check(0, "producer must be killed during blocked shared read");
   return 1;
 }

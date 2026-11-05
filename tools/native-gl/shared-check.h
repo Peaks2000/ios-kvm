@@ -70,6 +70,7 @@ static void shared_surface_check(void) {
   void *lease = ios_kvm_native_gl_readback_pin(pixels, span);
   require(lease != NULL, "explicit surface pin");
   uint64_t before = ios_kvm_native_gl_shared_submissions();
+  uint64_t async_before = ios_kvm_native_gl_async_submissions();
   for (unsigned frame = 0; frame < 12; frame++) {
     require(IOSurfaceLock(surface, 0, NULL) == 0, "surface writer lock");
     glUniform1f(phase, (frame + 1) / 16.0f);
@@ -109,6 +110,11 @@ static void shared_surface_check(void) {
   }
   uint64_t submitted = ios_kvm_native_gl_shared_submissions() - before;
   require(submitted == 12, "twelve actual retained shared reads");
+  const char *async_mode = getenv("IOS_KVM_NATIVE_ASYNC_READBACK");
+  int asynchronous = async_mode && !strcmp(async_mode, "1");
+  require(ios_kvm_native_gl_async_submissions() - async_before ==
+              (asynchronous ? submitted : 0),
+          "actual synchronous/asynchronous retained submission mode");
   /* An active but untagged lease must still use ordinary synchronous readback.
    */
   ios_kvm_native_gl_readback_surface(lease, 0);

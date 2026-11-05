@@ -9,8 +9,12 @@ struct ng_pin {
 };
 static _Thread_local struct ng_pin *ng_active_pin;
 static _Atomic uint64_t ng_shared_submissions;
+static _Atomic uint64_t ng_shared_async_submissions;
 uint64_t ios_kvm_native_gl_shared_submissions(void) {
   return atomic_load(&ng_shared_submissions);
+}
+uint64_t ios_kvm_native_gl_async_submissions(void) {
+  return atomic_load(&ng_shared_async_submissions);
 }
 static int ng_shared_enabled(void) {
   const char *mode = getenv("IOS_KVM_NATIVE_SHARED");
@@ -104,6 +108,17 @@ static int ng_shared_try_read(GLint x, GLint y, GLsizei w, GLsizei h,
   a[10] = out[1];
   memcpy(request, a, sizeof(a));
   atomic_fetch_add(&ng_shared_submissions, 1);
+  const char *async_mode = getenv("IOS_KVM_NATIVE_ASYNC_READBACK");
+  if (async_mode && !strcmp(async_mode, "1")) {
+    ng_enqueue(NG_READ_SHARED, request, length);
+    ng_submit_context(ng_current(), NULL, 4, 1);
+    uint64_t previous = atomic_fetch_add(&ng_shared_async_submissions, 1);
+    const char *trace = getenv("IOS_KVM_NATIVE_TRACE_ERRORS");
+    if (!previous && trace && !strcmp(trace, "1"))
+      fprintf(stderr, "native GLES asynchronous retained submission active\n");
+    free(request);
+    return 1;
+  }
   int32_t completion = -1;
   ng_call(NG_READ_SHARED, request, length, &completion, 4);
   free(request);

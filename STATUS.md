@@ -1,5 +1,41 @@
 # Local development status
 
+## November 5 asynchronous native retained readback
+
+- Added an opt-in native transport mode that sends a tagged retained-surface
+  read without waiting for its RPC reply. The host executes the context stream
+  in order and publishes completion or failure through the existing kernel
+  cell. Ordinary reads and queries retain their synchronous behavior. Wire
+  version8 rejects old peers. Asynchronous batches require shared RAM, exactly
+  four bytes of internal read status and a final retained-read record.
+- The kernel-backed surface remains retained independently of its producer.
+  NVIDIA and LLVMPIPE ASan/UBSan process-exit tests explicitly pause the host
+  before destination writes, observe submission return, kill the producer,
+  verify its PID is gone, then validate the surviving reader's pending lock,
+  completed pixels, padding and eventual surface destruction. Both passed.
+  Receipts `.local/native-gl-api/async-exit-{nvidia,software}-20261105`.
+- Full native GPU/EAGL suites pass as UID/GID501 on NVIDIA and LLVMPIPE with
+  instrumented hosts. Actual submission counters verify the asynchronous mode.
+  Guest temporary files were removed and host servers stopped. Disposable-RAM
+  host tests also pass split/nonlinear segments, bounds, overlap, disconnect,
+  asynchronous error completion and following-query reply sequencing on both.
+- A single-process synchronous/asynchronous/asynchronous/synchronous benchmark
+  measured submission means11.61/1.29ms at750x1624 and22.35/1.52ms at1125x2436.
+  Completed-pixel means, including the CPU reader lock before glGetError, were
+  11.72/9.87ms and22.47/19.67ms. Every pixel and padding byte passed. The public
+  raw samples and binary hashes are in
+  tools/native-gl/evidence/async-readback-nvidia-20261105.json. The host used
+  ASan/UBSan with driver leak detection disabled. Receipt
+  `.local/native-gl-api/async-benchmark-nvidia-20261105`.
+- This remains a research opt-in. GPU-resident scanout, CPU translation gains,
+  physical AMD/Intel validation and faster-than-iPhone-X performance remain open.
+- The90-second live compositor trial confirms actual asynchronous submission on
+  the selected NVIDIA GPU. It recorded no GL-error marker, reached the home
+  screen, restored its original injection configuration and removed temporary
+  guest files and its server. Screenshots still show skew, colour stripes and
+  missing regions. This is integration evidence without a desktop speedup
+  claim. Receipt `.local/native-gl-api/compositor-async-20261105`.
+
 ## November 5 enabled-attribute query cache
 
 - The EAGL drawing helpers repeatedly query enabled vertex attributes. The proxy
