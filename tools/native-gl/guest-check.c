@@ -68,6 +68,8 @@ static GLuint texture(unsigned w, unsigned h) {
 #include "shared-bench.h"
 #include "pixel-state-check.h"
 #include "format-check.h"
+#include "vertex-check.h"
+#include "label-check.h"
 static void *isolation(void *argument) {
   unsigned color = (unsigned)(uintptr_t)argument;
   GLuint tex = texture(2, 2), fbo;
@@ -397,6 +399,8 @@ int main(void) {
   require(glGetError() == GL_INVALID_ENUM, "GL error preserved");
   require(glGetError() == GL_NO_ERROR, "GL error consumed once");
   compressed_pixels();
+  client_vertex_check();
+  debug_label_check();
   texture_format_check();
   shared_surface_check();
   shared_surface_benchmark();

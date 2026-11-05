@@ -1,8 +1,9 @@
 # Native GLES backend research
 
 This backend moves GLES processing onto the host CPU/GPU. The guest library
-exports 183 GLES entry points without linking guest Mesa. It is experimental
-and is **not selected by `run.sh` or installed into the window server**.
+exports 186 GLES entry points without linking guest Mesa. Diagnostics and the
+temporary compositor trial exercise this experimental backend. Normal launches
+use VirGL.
 
 Build with `python3 tools/build-native-gl.py`. The developer build requires the
 existing Mesa registry/headers and iOS SDK under `.local`, plus host EGL/GLES
@@ -43,6 +44,20 @@ EGL/GLES interfaces alone is not proof that those devices pass.
 - Shader text, compilation/link queries and logs; program/uniform locations;
   buffer uploads/subupdates; generated/deleted GL objects; explicit attribute locations; buffered vertex
   attributes and indexed draws; uniform vectors and square matrices.
+- Client vertex arrays are copied into bounded draw packets and uploaded to a
+  private native buffer. VAO state, interleaved attributes, normalized byte
+  colours, nonzero first/index values, byte/short/int indices, mixed client/VBO
+  attributes and buffer-backed indices are covered by twelve rendered frames.
+  Caller memory is changed after queueing each draw to verify snapshot lifetime.
+  Pointer queries return the original guest value. Limits are32 attributes,
+  1024 tracked VAOs, one million vertex/index entries, stride2048 and16MiB
+  packets. Client arrays with instanced draws remain an integration task.
+- EXT object labels retain their full bounded text per native context, with
+  native KHR/core label mirroring where available. Tests cover five object types,
+  long and truncated queries, explicit lengths, removal, deletion and GL errors.
+  Label storage is limited to4096 entries and4MiB per context, with64KiB per label.
+  The adapter follows the EXT label length and query rules.
+  [EXT_debug_label specification](https://registry.khronos.org/OpenGL/extensions/EXT/EXT_debug_label.txt)
 - Texture upload/subimage layouts for alpha, luminance, luminance/alpha, red,
   RG, RGB and RGBA bytes; red/RG/RGB/RGBA half/float components; and packed
   RGB565, RGBA4444/5551 and RGBA2101010. Native driver validation determines
@@ -78,6 +93,34 @@ EGL/GLES interfaces alone is not proof that those devices pass.
   on two threads or destroyed while current elsewhere. Pending calls are sent
   before release, including thread exit; the owner retains the context afterward.
   Resource-sharing groups and GLES2 contexts are not yet implemented.
+
+Native EAGL macro calls acquire their context across worker threads, then release
+the binding while retaining queued commands. Queries and flushes send that queue.
+Context destruction sends remaining commands before closing the connection.
+Three concurrent EAGL workers verify program identity and commands surviving
+worker exit. This addresses the compositor handoff that previously created
+implicit contexts and invalid program IDs.
+
+## Temporary compositor trial
+
+The explicit trial tool deploys a private bundle, changes backboardd's runtime
+injection, observes rendering, and restores the saved configuration. It arms a
+guest watchdog and confirms its process is alive before switching. Host-side GL
+error tracing preserves errors for callers. Bundle hashes and screenshots are
+saved with the result.
+
+```sh
+python3 tools/native-gl/try-compositor.py \
+  --profile .local/gpu-profile-auto.json \
+  --output .local/native-gl-api/my-compositor-trial --seconds 180
+```
+
+The NVIDIA trial in `compositor-handoff-nvidia` reached the home screen and
+completed180 seconds using one native context. Its configuration restoration,
+temporary-file removal and server shutdown were verified. The home screen has
+skew, colour stripes and missing regions. Before-trial VirGL screenshots also
+show skew and colour stripes. Desktop FPS comparisons, gesture behaviour and
+the visual defects require further work before launcher integration.
 
 The guest diagnostic creates its own shaders, textures, vertex/index buffers and
 framebuffer. Each rendered frame also checks real native fence completion and
@@ -205,7 +248,7 @@ entry is `glAlphaFunc`. The optional isolated test deploys a temporary bridge
 inside its own process; no normal boot/runtime library is replaced.
 
 Other missing pieces include complete required API coverage and runtime EAGL
-integration, share groups/GLES2 contexts, client vertex/index arrays, PBOs,
+integration, share groups/GLES2 contexts, instanced client arrays, PBOs,
 mapped buffers, callbacks, additional pixel types/formats, extension
 semantics and full invalid-argument behavior. Currently unsupported calls or
 transport failures abort the diagnostic client; this is not suitable for the

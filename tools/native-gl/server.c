@@ -31,15 +31,21 @@ static int ng_output(void *output, size_t capacity, size_t *used,
   return 0;
 }
 #include "server-errors.h"
+#include "server-labels.h"
 #include "server-pointers.h"
 #include "server-query.h"
 #include "server-shared.h"
+#include "server-vertices.h"
 #include "server-sync.h"
 static int ng_dispatch(uint32_t opcode, const uint8_t *data, size_t size,
                        void *output, size_t capacity, size_t *used) {
   switch (opcode) {
 #include "server-scalars.h"
   default:
+    if (opcode==NG_LABEL_SET || opcode==NG_LABEL_GET)
+      return ng_label_dispatch(opcode,data,size,output,capacity,used);
+    if (opcode >= NG_CLIENT_DRAW && opcode <= NG_LOCAL_ERROR)
+      return ng_vertex_dispatch(opcode, data, size, output, capacity, used);
     if (opcode == NG_READ_SHARED)
       return ng_shared_read(data, size, output, capacity, used);
     if (opcode >= NG_GET_FLOAT)
@@ -122,6 +128,7 @@ static void *ng_serve(void *argument) {
         status = -1;
         break;
       }
+      ng_errors_after_record(record.opcode);
       at += padded;
     }
     struct ng_reply reply = {NG_MAGIC, sequence, (uint32_t)status,
@@ -138,8 +145,11 @@ static void *ng_serve(void *argument) {
 done:
   free(commands);
   free(output);
-  if (context != EGL_NO_CONTEXT && eglGetCurrentContext() == context)
+  if (context != EGL_NO_CONTEXT && eglGetCurrentContext() == context) {
     ng_sync_cleanup();
+    ng_vertices_cleanup();
+    ng_labels_cleanup();
+  }
   eglMakeCurrent(ng_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
   if (surface != EGL_NO_SURFACE)
     eglDestroySurface(ng_display, surface);
@@ -202,6 +212,8 @@ int main(int argc, char **argv) {
     fprintf(stderr, "native GLES: invalid shared RAM mapping\n");
     return 1;
   }
+  const char *trace_errors=getenv("IOS_KVM_NATIVE_TRACE_ERRORS");
+  ng_trace_driver_errors=trace_errors && !strcmp(trace_errors,"1");
   ng_display = ng_choose_display();
   if (ng_display == EGL_NO_DISPLAY || !eglInitialize(ng_display, NULL, NULL) ||
       !eglBindAPI(EGL_OPENGL_ES_API))

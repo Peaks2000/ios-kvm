@@ -1,7 +1,7 @@
 #ifndef IOS_KVM_NATIVE_GL_READBACK_H
 #define IOS_KVM_NATIVE_GL_READBACK_H
 #include <stdint.h>
-/* Leases belong to the calling thread. The caller keeps the IOSurface alive,
+/* Active lease bindings are thread local. The caller keeps the IOSurface alive,
  * restores any previous active lease, and releases before dropping the surface.
  * Only a matching kernel-backed surface tag permits the host-retained path.
  * All reads currently wait for an RPC acknowledgement, including shared reads.

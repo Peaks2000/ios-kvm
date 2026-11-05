@@ -56,6 +56,9 @@ extern const void *_dyld_get_shared_cache_range(size_t *length);
 #ifndef HAKIOS_GL
 #define HAKIOS_GL "/redwood/lib/libhakios.gl.dylib"
 #endif
+#ifdef IOS_KVM_NATIVE_GL
+extern int ios_kvm_native_gl_environment(void);
+#endif
 
 static uintptr_t slide;
 
@@ -1048,6 +1051,11 @@ opengl_es(void)
 	void *library;
 	int wanted = -1, told = 0;
 	const char *library_path = HAKIOS_GL;
+
+#ifdef IOS_KVM_NATIVE_GL
+	if (!ios_kvm_native_gl_environment()) return;
+	wanted = told = 1;
+#endif
 
 #ifdef IOS_KVM_VIRGL
 	setenv("GALLIUM_DRIVER", "virpipe", 1);

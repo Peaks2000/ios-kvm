@@ -1,5 +1,6 @@
 /* Isolated test of the same private EAGL macro table used by CoreAnimation. */
 #include <GLES3/gl3.h>
+#include "labels.h"
 #include <IOSurface/IOSurfaceRef.h>
 #import <OpenGLES/EAGL.h>
 #include <dlfcn.h>
@@ -55,9 +56,14 @@ static GLuint format_texture(unsigned w, unsigned h) {
 #define require check
 #define texture format_texture
 #include "format-check.h"
+#define NG_VERTEX_SHADER format_shader
+#include "vertex-check.h"
+#include "label-check.h"
+#undef NG_VERTEX_SHADER
 #undef texture
 #undef require
 #undef NG_FORMAT_SHADER
+#include "eagl-thread-check.h"
 int main(int argc, char **argv) {
   @autoreleasepool {
     if (argc != 2)
@@ -168,6 +174,9 @@ int main(int argc, char **argv) {
     }
     shared_eagl_surface(context, library);
     texture_format_check();
+    client_vertex_check();
+    debug_label_check();
+    eagl_thread_check(library);
     glDeleteBuffers(2, buffers);
     glDeleteVertexArrays(1, &vao);
     glDeleteFramebuffers(1, &fbo);

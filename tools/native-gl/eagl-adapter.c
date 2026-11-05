@@ -13,6 +13,13 @@ int hakios_gl_make_current(struct hakios_gl *context) {
   return ios_kvm_native_gl_make_current(
       (struct ios_kvm_native_gl_context *)context);
 }
+int hakios_gl_native_enter(struct hakios_gl *context) {
+  return ios_kvm_native_gl_make_current_wait(
+      (struct ios_kvm_native_gl_context *)context);
+}
+int hakios_gl_native_leave(void) {
+  return ios_kvm_native_gl_release_deferred();
+}
 void hakios_gl_destroy(struct hakios_gl *context) {
   if (!ios_kvm_native_gl_context_destroy(
           (struct ios_kvm_native_gl_context *)context))

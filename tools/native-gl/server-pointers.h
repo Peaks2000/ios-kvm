@@ -35,6 +35,8 @@ static int ng_count(GLenum pname) {
 static int ng_objects(int generate, uint64_t kind, GLsizei n, GLuint *values) {
   if (n < 0 || n > 4096)
     return -1;
+  if (!generate)
+    ng_labels_objects(0,kind,n,values);
 #define OBJECT(k, name)                                                        \
   case k:                                                                      \
     if (generate)                                                              \
@@ -55,6 +57,8 @@ static int ng_objects(int generate, uint64_t kind, GLsizei n, GLuint *values) {
     return -1;
   }
 #undef OBJECT
+  if (generate)
+    ng_labels_objects(1,kind,n,values);
   return 0;
 }
 static int ng_pixels(uint64_t width, uint64_t height, uint64_t format,

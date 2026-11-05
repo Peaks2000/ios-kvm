@@ -30,6 +30,7 @@ static void ng_delete(unsigned kind, GLsizei n, const GLuint *names) {
     ng_failure("object count");
   uint64_t a[] = {kind, (uint64_t)n};
   ng_blob(NG_DELETE, a, 2, names, n * 4, NULL, 0, 0);
+  ng_vertices_delete(kind, n, names);
   if (kind == 1)
     ng_pixel_buffers_forget();
 }
@@ -93,12 +94,16 @@ void glBufferSubData(GLenum target, GLintptr offset, GLsizeiptr size,
 void glVertexAttribPointer(GLuint index, GLint size, GLenum type,
                            GLboolean normalized, GLsizei stride,
                            const void *pointer) {
+  if (ng_vertex_pointer(index, size, type, normalized, stride, pointer))
+    return;
   uint64_t a[] = {index,      (uint64_t)size,   type,
                   normalized, (uint64_t)stride, (uintptr_t)pointer};
   ng_blob(NG_VERTEX_POINTER, a, 6, NULL, 0, NULL, 0, 0);
 }
 void glDrawElements(GLenum mode, GLsizei count, GLenum type,
                     const void *indices) {
+  if (ng_client_draw(1, mode, 0, count, type, indices))
+    return;
   uint64_t a[] = {mode, (uint64_t)count, type, (uintptr_t)indices};
   ng_blob(NG_DRAW_ELEMENTS, a, 4, NULL, 0, NULL, 0, 0);
 }

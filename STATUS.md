@@ -1,5 +1,45 @@
 # Local development status
 
+## November 5 checkpoint of native compositor work
+
+- Revalidated the interrupted worktree and saved November2 results. VM and
+  diagnostic processes are stopped. Both `vertices-final-nvidia` and
+  `vertices-final-software` completed their suites as UID/GID501 with ASan/UBSan
+  host binaries. Software also exercised per-call EAGL diagnostics. Their guest
+  files were removed and servers stopped.
+- The first live compositor attempt rejected guest-memory vertex attributes.
+  Added VAO-aware client vertex snapshots, normalized/interleaved attributes,
+  nonzero first/index values, byte/short/int indices and mixed VBO/client data.
+  Buffer-backed indices use a bounded native range query. The receiver validates
+  packet ranges and uses private vertex/index buffers, restoring public bindings
+  afterward. Twelve real shader frames verify freshly changed source memory,
+  snapshot ownership after the draw returns, pointer queries, restart indices,
+  VAO switching and invalid metadata handling. Wire version7 covers these calls.
+- A subsequent live attempt reached glLabelObjectEXT. Added full bounded EXT
+  label state and queries, deletion handling and optional native KHR/core label
+  mirroring. Five object types, long/truncated/explicit/removed labels, untouched
+  output bounds and GL errors pass through the proxy and EAGL dispatch. Added
+  malformed vertex, index-range and label transport rejection/recovery cases.
+- Host-side GL error tracing then found invalid glUseProgram calls. The EAGL
+  adapter had rejected worker-thread context handoffs and continued in implicit
+  contexts. Native macro calls now acquire the same context and release the
+  binding with queued commands retained. Context destruction flushes the queue.
+  Three concurrent worker tests preserve program identity, return to the initial
+  thread and retain commands across worker exit. Early-return and trace paths
+  release or retain ownership at the corresponding call boundary.
+- `try-compositor.py` saves runtime injection configuration and stages an owned
+  bundle with recorded hashes. It arms a guest watchdog, verifies its process,
+  checks renderer identity, captures frames/logs and restores the original
+  configuration. `compositor-handoff-nvidia` completed180 seconds with one native
+  context and no reported native GL command errors. Screenshots show a home
+  screen with skew, colour stripes and missing regions. Before-trial VirGL
+  captures already show skew and stripes. All four trial configurations were
+  restored, their guest files removed and host servers stopped.
+- The overall performance goal remains active. Real desktop timing, rendering
+  defects, further API/extension coverage, physical AMD/Intel tests, CPU speed
+  and iPhone-X comparisons remain open. The pending IPA changes and gl_lat option
+  are preserved separately.
+
 ## November 2: native compositor formats, error semantics and mobile identity
 
 - Inspected the actual running VirGL compositor log: ordinary UI content uses

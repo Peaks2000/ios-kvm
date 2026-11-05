@@ -347,6 +347,8 @@ static __thread struct eagl *current;
 static struct eagl *contexts[8];
 static uint32_t slot_calls[SLOTS];
 #ifdef IOS_KVM_NATIVE_EAGL
+extern int hakios_gl_native_enter(struct hakios_gl *context);
+extern int hakios_gl_native_leave(void);
 static int check_errors;                /* native calls are batched; per-call queries defeat that */
 #else
 static int check_errors = 1;            /* ask the library for an error after every call (the first frames) */
@@ -399,12 +401,20 @@ static void clear_now(struct eagl *e);
 static void
 eagl_enter(struct eagl *e, unsigned offset)
 {
+#ifdef IOS_KVM_NATIVE_EAGL
+	if (!hakios_gl_native_enter(e->gl)) {
+		say("hakios-gl: native context acquisition failed\n");
+		abort();
+	}
+	current = e;
+#else
 	if (current != e) {
 		if (!hakios_gl_make_current(e->gl)) {
 			say("hakios-gl: the context cannot be made this thread's\n");
 		}
 		current = e;
 	}
+#endif
 	slot_calls[offset / 8]++;
 	e->calls++;
 	if (slow_calls_us != 0) {
@@ -442,6 +452,10 @@ eagl_leave(struct eagl *e, unsigned offset)
 			    e->in_frame ? "" : " (before its first draw)");
 		}
 	}
+#ifdef IOS_KVM_NATIVE_EAGL
+	if (!hakios_gl_native_leave()) abort();
+	current = NULL;
+#endif
 }
 
 /* An entry the library has no function for: say so, once an entry. */
@@ -454,6 +468,7 @@ eagl_missing(void *context, unsigned offset)
 	if (slot_calls[offset / 8] == 1) {
 		say("hakios-gl: CALLED AND NOT THERE: entry %#x, %s\n", offset, eagl_slot_name(offset));
 	}
+	eagl_leave(e, offset);
 	return 0;
 }
 
@@ -3279,10 +3294,10 @@ my_glDrawArrays(void *context, GLenum mode, GLint first, GLsizei count)
 	if (trace_listed) {
 		trace_placed_look(e);
 	}
-	EAGL_LEAVE(e, 0x210);
 	if (eagl_tracing) {
 		trace_pixels(e);
 	}
+	EAGL_LEAVE(e, 0x210);
 }
 
 static void
@@ -3319,10 +3334,10 @@ my_glDrawElements(void *context, GLenum mode, GLsizei count, GLenum type, const 
 	if (trace_listed) {
 		trace_placed_look(e);
 	}
-	EAGL_LEAVE(e, 0x220);
 	if (eagl_tracing) {
 		trace_pixels(e);
 	}
+	EAGL_LEAVE(e, 0x220);
 }
 
 static void
@@ -4053,6 +4068,10 @@ my_initWithAPI(id self, SEL selector, unsigned long api, id properties)
 	say("hakios-gl: an OpenGL ES %lu context for CoreAnimation, by %s: %s; %s; shaders %s\n", api, hakios_gl_library(),
 	    (const char *)glGetString(GL_VERSION), (const char *)glGetString(GL_RENDERER),
 	    (const char *)glGetString(GL_SHADING_LANGUAGE_VERSION));
+#ifdef IOS_KVM_NATIVE_EAGL
+	if (!hakios_gl_native_leave()) abort();
+	current = NULL;
+#endif
 	return self;
 }
 
@@ -4126,6 +4145,7 @@ my_texImageIOSurface(id self, SEL selector, IOSurfaceRef surface, unsigned long 
 	glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture);
 	if (target != GL_TEXTURE_2D || texture == 0 || (image = image_new(e, (GLuint)texture, surface)) == NULL) {
 		say("hakios-gl: -texImageIOSurface: target %#lx, texture %d: not done\n", target, texture);
+		eagl_leave(e, 0x970);
 		return NO;
 	}
 	image->to = (GLenum)target;
@@ -4179,6 +4199,7 @@ my_attachImage(id self, SEL selector, unsigned long target, IOSurfaceRef surface
 	    (image = image_new(e, (GLuint)texture, surface)) == NULL) {
 		say("hakios-gl: -attachImage: target %#lx, texture %d, an IOSurface of '%.4s': not done\n", target, texture,
 		    (const char *)&(uint32_t){ __builtin_bswap32(pixels) });
+		eagl_leave(e, 0x970);
 		return NO;
 	}
 	image->target = true;
@@ -4228,6 +4249,10 @@ my_dealloc(id self, SEL selector)
 	struct eagl *e = context_of(self);
 
 	if (e != NULL) {
+#ifdef IOS_KVM_NATIVE_EAGL
+		if (!hakios_gl_native_enter(e->gl)) abort();
+		current = e;
+#endif
 		say("hakios-gl: the context goes\n");
 		summary(e);
 		for (unsigned i = 0; i < e->image_count; i++) {

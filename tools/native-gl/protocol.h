@@ -8,7 +8,7 @@
 #error "native GL wire encoding requires a little-endian peer"
 #endif
 #define NG_MAGIC UINT32_C(0x4e474c33)
-#define NG_VERSION 6
+#define NG_VERSION 7
 #define NG_FEATURE_SHARED_READ UINT32_C(1)
 struct ng_ack {
   uint32_t magic, features;
@@ -68,7 +68,12 @@ enum {
   NG_GET_ACTIVE_UNIFORM,
   NG_GET_UNIFORM,
   NG_COMPRESSED_IMAGE,
-  NG_READ_SHARED
+  NG_READ_SHARED,
+  NG_CLIENT_DRAW,
+  NG_INDEX_MAX,
+  NG_LOCAL_ERROR,
+  NG_LABEL_SET,
+  NG_LABEL_GET
 };
 /* No process pointers or function addresses are accepted on the wire. */
 #endif

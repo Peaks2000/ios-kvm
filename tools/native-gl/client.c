@@ -3,10 +3,11 @@
 #define _DARWIN_C_SOURCE 1
 #include "context.h"
 #include "io.h"
-#include "protocol.h"
 #include "pixel-format.h"
+#include "protocol.h"
 #include "readback.h"
 #include "schema.h"
+#include "vertices.h"
 #include <GLES3/gl31.h>
 #include <arpa/inet.h>
 #include <pthread.h>
@@ -24,6 +25,20 @@ struct ng_pixel_store {
   GLint alignment, row, rows, pixels, buffer;
   int buffer_known;
 };
+struct ng_attribute {
+  const void *pointer;
+  GLint size, stride;
+  GLenum type;
+  GLboolean normalized;
+  unsigned client, enabled, defined, divisor;
+};
+struct ng_vertex_array {
+  struct ng_vertex_array *next;
+  GLuint name;
+  GLint element;
+  int element_known;
+  struct ng_attribute attributes[NG_ATTRIBUTE_LIMIT];
+};
 struct ios_kvm_native_gl_context {
   int fd;
   int explicit_owner;
@@ -34,6 +49,10 @@ struct ios_kvm_native_gl_context {
   struct ng_string_entry *strings;
   unsigned string_count, string_capacity;
   struct ng_pixel_store pixel_store[2]; /* unpack, pack */
+  struct ng_vertex_array *vertex_arrays;
+  unsigned vertex_array_count;
+  GLint array_buffer, vertex_array, max_attributes;
+  int array_known, vertex_array_known, primitive_restart;
 };
 static pthread_key_t ng_key;
 static pthread_once_t ng_once = PTHREAD_ONCE_INIT;
@@ -52,6 +71,11 @@ static void ng_free(struct ios_kvm_native_gl_context *c) {
   for (unsigned i = 0; i < c->string_count; i++)
     free(c->strings[i].text);
   free(c->strings);
+  while (c->vertex_arrays) {
+    struct ng_vertex_array *next = c->vertex_arrays->next;
+    free(c->vertex_arrays);
+    c->vertex_arrays = next;
+  }
   pthread_mutex_destroy(&c->ownership);
   free(c);
 }
@@ -106,6 +130,7 @@ static struct ios_kvm_native_gl_context *ng_open(int explicit_owner) {
       (ack.features & ~NG_FEATURE_SHARED_READ))
     goto failed;
   c->features = ack.features;
+  c->array_known = c->vertex_array_known = 1;
   for (unsigned i = 0; i < 2; i++) {
     c->pixel_store[i].alignment = 4;
     c->pixel_store[i].buffer_known = 1;
@@ -153,8 +178,40 @@ int ios_kvm_native_gl_context_destroy(struct ios_kvm_native_gl_context *c) {
   }
   if (pthread_mutex_trylock(&c->ownership))
     return 0;
+  if (c->used)
+    ng_flush_context(c, NULL, 0);
   pthread_mutex_unlock(&c->ownership);
   ng_free(c);
+  return 1;
+}
+int ios_kvm_native_gl_make_current_wait(
+    struct ios_kvm_native_gl_context *next) {
+  pthread_once(&ng_once, ng_key_init);
+  struct ios_kvm_native_gl_context *old = pthread_getspecific(ng_key);
+  if (old == next)
+    return 1;
+  if (old && !ios_kvm_native_gl_make_current(NULL))
+    return 0;
+  if (!next)
+    return 1;
+  if (pthread_mutex_lock(&next->ownership))
+    return 0;
+  if (pthread_setspecific(ng_key, next)) {
+    pthread_mutex_unlock(&next->ownership);
+    return 0;
+  }
+  return 1;
+}
+int ios_kvm_native_gl_release_deferred(void) {
+  pthread_once(&ng_once, ng_key_init);
+  struct ios_kvm_native_gl_context *c = pthread_getspecific(ng_key);
+  if (!c)
+    return 1;
+  if (!c->explicit_owner)
+    return ios_kvm_native_gl_make_current(NULL);
+  if (pthread_setspecific(ng_key, NULL))
+    return 0;
+  pthread_mutex_unlock(&c->ownership);
   return 1;
 }
 static struct ios_kvm_native_gl_context *ng_current(void) {
@@ -239,11 +296,20 @@ static void ng_call(uint32_t op, const void *data, size_t size, void *output,
 static int ng_shared_try_read(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum,
                               void *);
 #include "client-pixel-state.h"
+static void ng_vertices_delete(unsigned, GLsizei, const GLuint *);
+static int ng_vertex_pointer(GLuint, GLint, GLenum, GLboolean, GLsizei,
+                             const void *);
+static int ng_client_draw(int, GLenum, GLint, GLsizei, GLenum, const void *);
+/* Implementation headers use declarations from earlier headers in this list. */
+// clang-format off
 #include "client-pointers.h"
+#include "client-vertices.h"
+#include "client-labels.h"
 #include "client-query.h"
 #include "client-scalars.h"
 #include "client-shared.h"
 #include "client-sync.h"
+// clang-format on
 /* Diagnostic implicit contexts are released; explicit contexts remain
  * owner-managed. */
 void ios_kvm_native_gl_disconnect(void) {

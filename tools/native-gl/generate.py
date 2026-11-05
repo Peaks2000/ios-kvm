@@ -43,6 +43,10 @@ client, server = [], []
 for opcode, (name, (ret, params)) in enumerate(sorted(prototypes.items()), 1):
     decl = ', '.join(f'{t} {n}' for t, n in params) or 'void'
     client.append(f'{ret} {name}({decl}) {{')
+    if name == 'glDrawArrays':
+        client.append(' if(ng_client_draw(0,mode,first,count,0,NULL)) return;')
+    elif name == 'glDrawArraysInstanced':
+        client.append(' ng_client_instanced_guard();')
     client.append(f' uint64_t args[{max(1,len(params))}]={{0}};')
     for index, (ctype, pname) in enumerate(params):
         client.append(f' _Static_assert(sizeof({ctype})<=8,"scalar size"); memcpy(args+{index},&{pname},sizeof({pname}));')
@@ -56,6 +60,15 @@ for opcode, (name, (ret, params)) in enumerate(sorted(prototypes.items()), 1):
         client.append(' ng_pixel_store_update(pname,param);')
     elif name == 'glBindBuffer':
         client.append(' ng_pixel_buffer_bind(target);')
+        client.append(' ng_vertex_buffer_bind(target,buffer);')
+    elif name == 'glBindVertexArray':
+        client.append(' ng_vertex_array_bind(array);')
+    elif name in ('glEnableVertexAttribArray', 'glDisableVertexAttribArray'):
+        client.append(f' ng_vertex_enable(index,{int(name == "glEnableVertexAttribArray")});')
+    elif name == 'glVertexAttribDivisor':
+        client.append(' ng_vertex_divisor(index,divisor);')
+    elif name in ('glEnable', 'glDisable'):
+        client.append(f' if(cap==GL_PRIMITIVE_RESTART_FIXED_INDEX) ng_current()->primitive_restart={int(name == "glEnable")};')
     client.append('}')
     server.append(f'case {opcode}: {{')
     server.append(f' if(size!={len(params)*8}) return -1;')
@@ -69,7 +82,10 @@ for opcode, (name, (ret, params)) in enumerate(sorted(prototypes.items()), 1):
     if ret == 'void':
         server.append(f' {call}; return 0;')
     else:
-        server.append(f' {ret} value={call}; return ng_output(output,capacity,used,&value,sizeof(value));')
+        server.append(f' {ret} value={call};')
+        if name in ('glCreateShader','glCreateProgram'):
+            server.append(f' if(value) ng_label_forget({"0x8b48" if name == "glCreateShader" else "0x8b40"},value);')
+        server.append(' return ng_output(output,capacity,used,&value,sizeof(value));')
     server.append('}')
 (destination / 'client-scalars.h').write_text('\n'.join(client)+'\n')
 (destination / 'server-scalars.h').write_text('\n'.join(server)+'\n')

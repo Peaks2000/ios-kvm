@@ -142,6 +142,9 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
         (a.output / 'guest.log').write_text(output)
         if result.returncode or 'Native GL general API check PASSED' not in output:
             raise RuntimeError('guest correctness check failed; inspect guest.log')
+        for marker in ('Native client vertices PASSED','Native debug labels PASSED'):
+            if marker not in output:
+                raise RuntimeError('guest coverage did not finish: '+marker)
         if a.guest_uid == 501 and 'Native guest identity: uid=501 gid=501' not in output:
             raise RuntimeError('guest diagnostic identity was not verified')
         if a.shared_ram and 'Native shared IOSurface check PASSED' not in output:
@@ -178,6 +181,9 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
             (a.output / 'eagl.log').write_text(eagl_output)
             if eagl.returncode or 'Native EAGL macro ABI check PASSED' not in eagl_output:
                 raise RuntimeError('isolated EAGL macro ABI check failed; inspect eagl.log')
+            for marker in ('Native client vertices PASSED','Native debug labels PASSED','Native EAGL worker handoff PASSED'):
+                if marker not in eagl_output:
+                    raise RuntimeError('isolated EAGL coverage did not finish: '+marker)
             if a.guest_uid == 501 and 'Native guest identity: uid=501 gid=501' not in eagl_output:
                 raise RuntimeError('guest EAGL identity was not verified')
             if a.shared_ram and 'Native EAGL shared IOSurface check PASSED' not in eagl_output:

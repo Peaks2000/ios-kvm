@@ -31,6 +31,8 @@ void glGetTexParameteriv(GLenum target, GLenum pname, GLint *params) {
   ng_integer_query(NG_GET_TEX_PARAMETER, a, 2, params);
 }
 void glGetVertexAttribiv(GLuint index, GLenum pname, GLint *params) {
+  if (ng_vertex_query(index, pname, params))
+    return;
   uint64_t a[] = {index, pname};
   ng_integer_query(NG_GET_VERTEX_ATTRIBUTE, a, 2, params);
 }

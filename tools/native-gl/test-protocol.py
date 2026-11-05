@@ -87,6 +87,15 @@ cases = [
     ('oversized attached shader list', record(0x1001d, struct.pack('<2Q', 0, 4097)), 16, 1, None, True),
     ('truncated compressed texture', record(0x10020, struct.pack('<8Q', 0x0de1, 0, 0x9274, 4, 4, 0, 8, 1) + bytes(7)), 0, 1, None, True),
     ('wrong compressed block size', record(0x10020, struct.pack('<8Q', 0x0de1, 0, 0x9274, 4, 4, 0, 1, 1) + bytes(1)), 0, 1, None, True),
+    ('excess client attributes', record(0x10022, struct.pack('<8Q', 0, 4, 0, 1, 0, 0, 0, 33)), 0, 1, None, True),
+    ('truncated client attribute', record(opcode['glEnableVertexAttribArray'], struct.pack('<Q', 0)) + record(0x10022, struct.pack('<8Q', 0, 4, 0, 1, 0, 0, 0, 1) + struct.pack('<5Q', 0, 2, 0x1406, 0, 8) + bytes(7)), 0, 1, None, True),
+    ('duplicate client attribute', record(opcode['glEnableVertexAttribArray'], struct.pack('<Q', 0)) + record(0x10022, struct.pack('<8Q', 0, 4, 0, 1, 0, 0, 0, 2) + (struct.pack('<5Q', 0, 2, 0x1406, 0, 8) + bytes(8)) * 2), 0, 1, None, True),
+    ('oversized client index span', record(0x10022, struct.pack('<8Q', 1, 4, 0, 1, 0x1405, 0, 0x10000000, 0)), 0, 1, None, True),
+    ('undersized index-range output', record(0x10023, struct.pack('<3Q', 1, 0x1403, 0)), 4, 1, None, True),
+    ('unknown injected GL error', record(0x10024, struct.pack('<Q', 0xdeadbeef)), 0, 1, None, True),
+    ('truncated debug label', record(0x10025, struct.pack('<3Q', 0x1702, 0, 4) + bytes(3)), 0, 1, None, True),
+    ('oversized debug label', record(0x10025, struct.pack('<3Q', 0x1702, 0, 65537)), 0, 1, None, True),
+    ('undersized label output', record(0x10026, struct.pack('<4Q', 0x1702, 0, 0, 0)), 4, 1, None, True),
 ]
 for label, commands, capacity, seq, declared, reply in cases:
     with authenticated() as s:
@@ -97,6 +106,15 @@ for label, commands, capacity, seq, declared, reply in cases:
         assert closed(s), label
     healthy()
     print('Rejected and recovered:', label)
+
+with authenticated() as s:
+    batch(s, record(0x10023, struct.pack('<3Q', 1, 0x1403, 0)), 8)
+    assert struct.unpack('<IIII', read(s, 16)) == (magic, 1, 0, 8)
+    assert struct.unpack('<II', read(s, 8)) == (1, 0)
+    batch(s, record(opcode['glGetError']), 4, sequence=2)
+    assert struct.unpack('<IIII', read(s, 16)) == (magic, 2, 0, 4)
+    assert struct.unpack('<I', read(s, 4)) == (0x502,)
+print('Missing element buffer reports a recoverable GL error')
 
 # Live fence IDs are context-owned, and output bounds precede driver writes.
 with authenticated() as owner, authenticated() as foreign:
