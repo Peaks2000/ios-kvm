@@ -10,6 +10,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import signal
@@ -25,12 +26,15 @@ p.add_argument('--output', type=Path, required=True)
 p.add_argument('--port', type=int, default=6777)
 p.add_argument('--seconds', type=int, default=60, choices=range(15, 301), metavar='15..300')
 p.add_argument('--async-readback', action='store_true')
+p.add_argument('--gpu-snapshots', action='store_true', help='Retain GPU images alongside the existing display path')
 p.add_argument('--render-state-cache', choices=('0', '1'), default='1',
                help='Control fused driver-state queries for comparison trials')
 p.add_argument('--copied-readback', action='store_true', help='Use the synchronous socket readback control')
 a = p.parse_args()
 if a.copied_readback and a.async_readback:
     p.error('--copied-readback and --async-readback are mutually exclusive')
+if a.gpu_snapshots and a.copied_readback:
+    p.error('--gpu-snapshots requires retained shared readback')
 if not 1024 <= a.port <= 65535:
     p.error('invalid port')
 selected = json.loads(a.profile.read_text())['selected']
@@ -108,6 +112,7 @@ def pending_surfaces():
 receipt = {'scope': 'Temporary native compositor trial; not desktop compatibility or performance proof',
            'selected': selected, 'seconds_requested': a.seconds, 'original_restored': False,
            'async_readback_requested': a.async_readback,
+           'gpu_snapshots_requested': a.gpu_snapshots,
            'render_state_cache': a.render_state_cache,
            'copied_readback_requested': a.copied_readback}
 server = None
@@ -152,7 +157,8 @@ with tempfile.TemporaryDirectory(prefix='native-desktop-', dir=root / '.local') 
         screenshot('before')
         start_offset = vm_log.stat().st_size
         server = subprocess.Popen([str(server_binary), str(token), str(a.port)], cwd=root,
-                                  env={**os.environ, **environment, **ram_environment, 'IOS_KVM_NATIVE_TRACE_ERRORS':'1'},
+                                  env={**os.environ, **environment, **ram_environment, 'IOS_KVM_NATIVE_TRACE_ERRORS':'1',
+                                       'IOS_KVM_NATIVE_GPU_SNAPSHOTS': str(int(a.gpu_snapshots))},
                                   stdout=server_log, stderr=server_log)
         deadline = time.monotonic() + 10
         while True:
@@ -282,6 +288,16 @@ with tempfile.TemporaryDirectory(prefix='native-desktop-', dir=root / '.local') 
             receipt['recovery_guest_directory'] = guest
             receipt['recovery_server_pid'] = server.pid if server else None
         receipt['server_stopped'] = not server or server.poll() is not None
+        if a.gpu_snapshots and changed and safe_to_stop:
+            rows = [tuple(map(int, row)) for row in re.findall(
+                r'native GPU owner closed=\d+ captures=(\d+) failures=(\d+) live_frames=(\d+) live_bytes=(\d+)',
+                (a.output / 'server.log').read_text())]
+            total = max((row[0] for row in rows), default=0)
+            receipt['gpu_snapshots_captured'] = total
+            receipt['gpu_snapshot_cleanup_passed'] = bool(total and not any(row[1] for row in rows)
+                                                          and (total, 0, 0, 0) in rows)
+            if not receipt['gpu_snapshot_cleanup_passed']:
+                failure = failure or 'GPU snapshot capture or owner cleanup did not finish'
         if changed and safe_to_stop and receipt['server_stopped']:
             try:
                 receipt['pending_surfaces_after'] = pending_surfaces()

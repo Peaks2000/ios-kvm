@@ -17,6 +17,9 @@ p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--generated', type=Path, required=True)
 p.add_argument('--profile', type=Path, required=True)
 p.add_argument('--port', type=int, default=6753)
+p.add_argument('--server', type=Path, help='Use an instrumented native server')
+p.add_argument('--gpu-snapshots', action='store_true',
+               help='Exercise opt-in GPU captures alongside the shared writes')
 a = p.parse_args()
 magic, base = 0x4e474c33, 0x40000000
 version = int(re.search(r'#define NG_VERSION (\d+)', Path(__file__).with_name('protocol.h').read_text())[1])
@@ -53,8 +56,9 @@ with tempfile.TemporaryDirectory(prefix='native-gl-shared-host-') as directory:
     token.write_bytes(os.urandom(32))
     token.chmod(0o600)
     with (Path(directory) / 'server.log').open('w+') as log:
-        server = subprocess.Popen([str((a.generated / 'server').resolve()), str(token), str(a.port)],
+        server = subprocess.Popen([str((a.server or a.generated / 'server').resolve()), str(token), str(a.port)],
                                   env={**os.environ, **environment,
+                                       'IOS_KVM_NATIVE_GPU_SNAPSHOTS': str(int(a.gpu_snapshots)),
                                        'IOS_KVM_RAM_FILE': f'/proc/{os.getpid()}/fd/{fd}',
                                        'IOS_KVM_RAM_SIZE': str(2 << 20)}, stdout=log, stderr=log)
         try:
@@ -140,6 +144,16 @@ with tempfile.TemporaryDirectory(prefix='native-gl-shared-host-') as directory:
             request(completion=cell + 1, invalid_cell=True)
             request(completion=base + (2 << 20), invalid_cell=True)
             request()  # An invalid request must not poison later contexts.
+            if a.gpu_snapshots:
+                deadline = time.monotonic() + 5
+                while True:
+                    output = (Path(directory) / 'server.log').read_text()
+                    closed = re.findall(r'native GPU owner closed=\d+ captures=(\d+) failures=(\d+) live_frames=(\d+) live_bytes=(\d+)', output)
+                    if len(closed) == 5 and ('5', '0', '0', '0') in closed:
+                        break
+                    assert time.monotonic() < deadline, ('GPU captures did not clean up', closed)
+                    time.sleep(.01)
+                print('Native shared GPU capture integration PASSED (5 captures, exact shared writes, owner-exit cleanup)')
             print('Native shared host check PASSED (split/nonlinear SG, bounds, overlaps, disconnect, exact writes)')
         finally:
             server.terminate()

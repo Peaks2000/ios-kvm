@@ -32,6 +32,7 @@ static int ng_output(void *output, size_t capacity, size_t *used,
   return 0;
 }
 #include "server-errors.h"
+#include "gpu-frames.h"
 #include "server-state.h"
 #include "server-trace.h"
 #include "server-labels.h"
@@ -176,6 +177,15 @@ static void *ng_serve(void *argument) {
 done:
   free(commands);
   free(output);
+  uint64_t gpu_owner = ng_gpu_owner;
+  ng_gpu_frames_owner_close();
+  if (gpu_owner) {
+    struct ng_gpu_frame_stats stats = ng_gpu_frame_stats_read();
+    fprintf(stderr, "native GPU owner closed=%llu captures=%llu failures=%llu "
+            "live_frames=%u live_bytes=%llu\n", (unsigned long long)gpu_owner,
+            (unsigned long long)stats.captured, (unsigned long long)stats.failed,
+            stats.live_frames, (unsigned long long)stats.live_bytes);
+  }
   if (context != EGL_NO_CONTEXT && eglGetCurrentContext() == context) {
     ng_sync_cleanup();
     ng_vertices_cleanup();
@@ -251,6 +261,11 @@ int main(int argc, char **argv) {
   if (ng_display == EGL_NO_DISPLAY || !eglInitialize(ng_display, NULL, NULL) ||
       !eglBindAPI(EGL_OPENGL_ES_API))
     return 1;
+  const char *snapshots = getenv("IOS_KVM_NATIVE_GPU_SNAPSHOTS");
+  if (ng_gpu_frames_init(ng_display, snapshots && !strcmp(snapshots, "1"))) {
+    fprintf(stderr, "native GLES: requested GPU snapshots are unsupported\n");
+    return 1;
+  }
   const EGLint attrs[] = {EGL_SURFACE_TYPE,
                           EGL_PBUFFER_BIT,
                           EGL_RENDERABLE_TYPE,

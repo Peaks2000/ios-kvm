@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import socket
 import subprocess
@@ -21,6 +22,7 @@ p.add_argument('--eagl', action='store_true', help='Also run the isolated EAGL m
 p.add_argument('--eagl-check-every-call', action='store_true', help='Enable native EAGL per-call error diagnostics and check error preservation')
 p.add_argument('--guest-uid', type=int, choices=(0, 501), default=0, help='Run temporary diagnostics as root or the compositor mobile identity')
 p.add_argument('--shared-ram', action='store_true', help='Opt into retained IOSurface readback through this VM RAM')
+p.add_argument('--gpu-snapshots', action='store_true', help='Also retain bounded GPU images for presentation research')
 p.add_argument('--async-readback', action='store_true', help='Submit retained surface writes without waiting for their RPC reply')
 p.add_argument('--benchmark-async-readback', action='store_true', help='Compare synchronous/asynchronous retained writes including CPU completion')
 p.add_argument('--benchmark', action='store_true', help='Measure copied/shared readback ABBA at two phone resolutions')
@@ -37,6 +39,8 @@ if a.benchmark_async_readback and a.benchmark_pixel_state:
     p.error('choose one readback benchmark mode')
 if a.async_readback and not a.shared_ram:
     p.error('--async-readback requires --shared-ram')
+if a.gpu_snapshots and not a.shared_ram:
+    p.error('--gpu-snapshots requires --shared-ram')
 if a.benchmark and not a.shared_ram:
     p.error('--benchmark requires --shared-ram')
 if not 1024 <= a.port <= 65535:
@@ -85,6 +89,7 @@ receipt = {'scope': 'Native GLES API correctness and optional readback benchmark
 receipt['vertex_state_benchmark_requested'] = a.benchmark_vertex_state
 receipt['async_readback_requested'] = a.async_readback
 receipt['async_readback_benchmark_requested'] = a.benchmark_async_readback
+receipt['gpu_snapshots_requested'] = a.gpu_snapshots
 error = None
 with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local') as directory, \
         (a.output / 'server.log').open('w') as server_log, \
@@ -98,7 +103,8 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
         os.close(fd)
     try:
         server = subprocess.Popen([str(server_binary), str(token), str(a.port)],
-                                  env={**os.environ, **environment, **shared_environment}, stdout=server_log,
+                                  env={**os.environ, **environment, **shared_environment,
+                                       'IOS_KVM_NATIVE_GPU_SNAPSHOTS': str(int(a.gpu_snapshots))}, stdout=server_log,
                                   stderr=subprocess.STDOUT, cwd=root)
         deadline = time.monotonic() + 10
         while True:
@@ -229,6 +235,25 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
                 raise RuntimeError('EAGL macro renderer differs from proxy renderer')
             receipt.update(eagl_macro_passed=True, eagl_renderer=actual)
         receipt.update(context_race_passed=True)
+        if a.gpu_snapshots:
+            deadline = time.monotonic() + 5
+            while True:
+                output = (a.output / 'server.log').read_text()
+                rows = [tuple(map(int, row)) for row in re.findall(
+                    r'native GPU owner closed=\d+ captures=(\d+) failures=(\d+) live_frames=(\d+) live_bytes=(\d+)', output)]
+                total = max((row[0] for row in rows), default=0)
+                if any(row[1] for row in rows):
+                    raise RuntimeError('GPU image capture reported an internal failure')
+                if total and (total, 0, 0, 0) in rows:
+                    break
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('GPU image capture or owner cleanup did not finish')
+                time.sleep(.01)
+            receipt.update(gpu_snapshots_captured=total, gpu_snapshot_cleanup_passed=True)
+        host_output = (a.output / 'server.log').read_text()
+        if any(marker in host_output for marker in
+               ('ERROR: AddressSanitizer', 'runtime error:', 'UndefinedBehaviorSanitizer')):
+            raise RuntimeError('Host sanitizer reported an error')
         receipt.update(passed=True, actual_renderer=renderer,
                        hashes={name: hashlib.sha256((local / name).read_bytes()).hexdigest()
                                for name in ['libios-kvm-native-gl.dylib', 'guest-check', 'context-race-check']})

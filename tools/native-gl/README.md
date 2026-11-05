@@ -283,6 +283,48 @@ Intel/AMD performance still need measurement. Visual defects remain present.
 The reviewed receipts and binary hashes are in
 `evidence/render-state-20261105.json`.
 
+### GPU-resident frame storage
+
+`run-check.py --shared-ram --async-readback --eagl --gpu-snapshots` exercises
+opt-in GPU snapshots alongside the existing CPU transfers. The host copies the
+read framebuffer into an owned RGBA texture, creates a preserved EGLImage and
+publishes an EGL fence. A separate context can import and sample that image.
+Each frame has an exact connection owner, completion address and sequence key.
+The store retains at most eight images, including consumer leases. Its 64 MiB
+logical pixel budget counts width × height × 4 bytes per image. Actual driver
+allocations include additional storage and overhead.
+
+The store evicts unleased older images and declines new captures when all slots
+are leased. Closing a producer revokes future acquisitions. Existing consumer
+leases keep their image and fence alive through producer context/thread exit.
+Consumers retain leases until imported texture siblings and their GPU work are
+retired. The capture path restores texture binding, consumes its own internal
+GL errors and leaves prior caller errors in the server's saved-error queue.
+The existing shared CPU transfer completes independently of capture availability.
+
+Build with `python3 tools/build-native-gl.py`, then run the host-only
+`.local/native-gl-api/gpu-frame-check` under the selected renderer environment.
+It renders changing spatial patterns, rewrites and destroys producers, then
+samples frozen images through shaders in unrelated contexts. Every pixel and
+output padding byte is verified at 257×131, 750×1624 and 1125×2436. It also tests
+leased-slot pressure, byte-budget eviction, invalid source handling and concurrent
+producer thread exit. `test-shared-host.py --gpu-snapshots` checks capture
+integration with exact scatter/gather writes and disconnect cleanup.
+
+`try-compositor.py --async-readback --gpu-snapshots` selects the same temporary,
+self-restoring desktop experiment. `run-exit-check.py --async-readback
+--gpu-snapshots` tests a producer killed while its host is paused. Snapshot
+capture is off by default. Actual host-window presentation, exact display-request
+selection and lazy CPU/GPU surface coherence remain integration work. The
+current snapshot prototype still performs the CPU readback and adds a GPU copy.
+Its tests establish correctness and lifetime behavior. End-to-end speed needs
+measurement after display integration.
+
+The API follows Khronos's
+[EGLImage lifetime specification](https://registry.khronos.org/EGL/extensions/KHR/EGL_KHR_image_base.txt),
+[GLES image import specification](https://registry.khronos.org/OpenGL/extensions/OES/OES_EGL_image.txt)
+and [EGL fence specification](https://registry.khronos.org/EGL/extensions/KHR/EGL_KHR_fence_sync.txt).
+
 ### Completed display requests
 
 The matching kernel exports read-only `kern.ios_kvm_display_state`. The standalone

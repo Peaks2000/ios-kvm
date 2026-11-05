@@ -19,6 +19,7 @@ flags = ['-O2', '-Wall', '-Wextra', '-Werror',
          '-I', str(src), '-I', str(out)]
 libs = shlex.split(subprocess.check_output(['pkg-config', '--cflags', '--libs', 'egl', 'glesv2'], text=True))
 subprocess.run(['cc', *flags, str(src / 'server.c'), '-o', str(out / 'server'), *libs, '-pthread'], check=True)
+subprocess.run(['cc', *flags, str(src / 'gpu-frame-check.c'), '-o', str(out / 'gpu-frame-check'), *libs, '-pthread'], check=True)
 clang = ['clang', '-target', 'arm64-apple-ios16.0', '-isysroot', str(sdk),
          '-fuse-ld=lld', *flags, '-I', str(mesa / 'include')]
 library = out / 'libios-kvm-native-gl.dylib'

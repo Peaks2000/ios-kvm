@@ -129,6 +129,8 @@ static int ng_shared_read(const uint8_t *data, size_t size, void *output,
     status = -EIO;
     goto complete;
   }
+  ng_gpu_frame_capture((GLint)a[0], (GLint)a[1], a[2], a[3], completion,
+                        (uint32_t)sequence);
   ng_trace_pixels(a[2], a[3], pixels, completion, sequence);
   if (a[4] == NG_BGRA)
     ng_swap_rb(pixels, pixels, tight);

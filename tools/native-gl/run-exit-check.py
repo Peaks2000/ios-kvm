@@ -26,6 +26,7 @@ p.add_argument('--output', type=Path, required=True)
 p.add_argument('--port', type=int, default=6758)
 p.add_argument('--sanitize', action='store_true')
 p.add_argument('--async-readback', action='store_true')
+p.add_argument('--gpu-snapshots', action='store_true', help='Include GPU-owned images in the producer-exit check')
 a = p.parse_args()
 if not 1024 <= a.port <= 65535:
     p.error('invalid port')
@@ -63,7 +64,8 @@ server = producer = observer = None
 guest = None
 victim_pid = None
 receipt = {'scope': 'Native retained readback across temporary guest process exit; not desktop or performance',
-           'selected': selected, 'sanitized': a.sanitize, 'async_readback': a.async_readback}
+           'selected': selected, 'sanitized': a.sanitize, 'async_readback': a.async_readback,
+           'gpu_snapshots_requested': a.gpu_snapshots}
 failure = None
 notify_read, notify_write = os.pipe()
 
@@ -90,6 +92,7 @@ with tempfile.TemporaryDirectory(prefix='native-exit-', dir=root / '.local') as 
     try:
         server = subprocess.Popen([str(host), str(token), str(a.port)], cwd=root,
                                   env={**os.environ, **environment, **ram_environment,
+                                       'IOS_KVM_NATIVE_GPU_SNAPSHOTS': str(int(a.gpu_snapshots)),
                                        'IOS_KVM_NATIVE_TEST_NOTIFY_FD': str(notify_write),
                                        'ASAN_OPTIONS': 'detect_leaks=0'},
                                   pass_fds=(notify_write,), stdout=server_log, stderr=server_log)
@@ -150,6 +153,11 @@ with tempfile.TemporaryDirectory(prefix='native-exit-', dir=root / '.local') as 
         log = (a.output / 'server.log').read_text()
         if any(s in log for s in ('ERROR: AddressSanitizer', 'runtime error:', 'UndefinedBehaviorSanitizer')):
             raise RuntimeError('Host sanitizer reported an error')
+        if a.gpu_snapshots:
+            wait_until(lambda: re.search(r'native GPU owner closed=\d+ captures=1 failures=0 live_frames=0 live_bytes=0',
+                                          (a.output / 'server.log').read_text()),
+                       server, 'GPU image owner cleanup', seconds=5)
+            receipt.update(gpu_snapshots_captured=1, gpu_snapshot_cleanup_passed=True)
         receipt.update(passed=True, hashes={name: hashlib.sha256((local / name).read_bytes()).hexdigest()
                                            for name in ('libios-kvm-native-gl.dylib', 'exit-check')})
         receipt['hashes']['host'] = hashlib.sha256(host.read_bytes()).hexdigest()

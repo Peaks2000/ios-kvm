@@ -1,0 +1,133 @@
+{
+  "date": "2026-11-05",
+  "scope": "GPU-owned frame snapshots, independent-context shader consumption and lifetime integration.",
+  "default_enabled": false,
+  "wire_version": 9,
+  "limits": {
+    "images": 8,
+    "logical_pixel_bytes": 67108864,
+    "bytes_per_pixel_budget": 4,
+    "driver_overhead_included": false
+  },
+  "host_stress": {
+    "scope": "Repeated GPU-image lifetime, pixel and capacity checks with ASan/UBSan",
+    "runs": [
+      {
+        "renderer": "NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2",
+        "repeats": 20,
+        "all_passed": true,
+        "shared_capture_integration_passed": true
+      },
+      {
+        "renderer": "llvmpipe (LLVM 22.1.8, 256 bits)",
+        "repeats": 20,
+        "all_passed": true,
+        "shared_capture_integration_passed": true
+      }
+    ],
+    "hashes": {
+      "gpu-frame-check-asan": "1a66155c24f81ef61d50bfa41b09be68db9f73d58d27b3a7e7bffdc30d9e544c",
+      "gpu-frames-server-asan": "418decd244a3f6e9620d165ea89e3c188cf46c94e978f5718ca0d515447623f5"
+    }
+  },
+  "vm_checks": [
+    {
+      "actual_renderer": "NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2",
+      "guest_uid_requested": 501,
+      "eagl_macro_passed": true,
+      "context_race_passed": true,
+      "gpu_snapshots_requested": true,
+      "gpu_snapshots_captured": 32,
+      "gpu_snapshot_cleanup_passed": true,
+      "passed": true,
+      "guest_temp_removed": true,
+      "server_stopped": true,
+      "hashes": {
+        "libios-kvm-native-gl.dylib": "17532c82ef2a974482f0d5197cc4f7a673ea2b3823af975e94969d4b11623f5c",
+        "guest-check": "fd8a79ded5b0508802649d4dd883b6d9d71950bdae71c7a302eba894d75f9072",
+        "context-race-check": "fb48293f2e51482529cde3c740c17d0710d9294d57b8f67dce15afeaafb025c9",
+        "server": "418decd244a3f6e9620d165ea89e3c188cf46c94e978f5718ca0d515447623f5",
+        "guest-exec": "f76d6d471a68a36c8e92d1e3efd6760b1c075789a2e87e857b5a3c2999585d0c",
+        "eagl-check": "a2d403261cce0353c83a90d53e4c7c227ba23f7c99107a9613c2d142c2fafb0c",
+        "eagl-coverage/libhakios-native-eagl.dylib": "83db27f8dc503d20a385878a532ea1f8395a3e4d17fcdd64c81c2594357bc5f1"
+      }
+    },
+    {
+      "actual_renderer": "llvmpipe (LLVM 22.1.8, 256 bits)",
+      "guest_uid_requested": 501,
+      "eagl_macro_passed": true,
+      "context_race_passed": true,
+      "gpu_snapshots_requested": true,
+      "gpu_snapshots_captured": 32,
+      "gpu_snapshot_cleanup_passed": true,
+      "passed": true,
+      "guest_temp_removed": true,
+      "server_stopped": true,
+      "hashes": {
+        "libios-kvm-native-gl.dylib": "17532c82ef2a974482f0d5197cc4f7a673ea2b3823af975e94969d4b11623f5c",
+        "guest-check": "fd8a79ded5b0508802649d4dd883b6d9d71950bdae71c7a302eba894d75f9072",
+        "context-race-check": "fb48293f2e51482529cde3c740c17d0710d9294d57b8f67dce15afeaafb025c9",
+        "server": "418decd244a3f6e9620d165ea89e3c188cf46c94e978f5718ca0d515447623f5",
+        "guest-exec": "f76d6d471a68a36c8e92d1e3efd6760b1c075789a2e87e857b5a3c2999585d0c",
+        "eagl-check": "a2d403261cce0353c83a90d53e4c7c227ba23f7c99107a9613c2d142c2fafb0c",
+        "eagl-coverage/libhakios-native-eagl.dylib": "83db27f8dc503d20a385878a532ea1f8395a3e4d17fcdd64c81c2594357bc5f1"
+      }
+    }
+  ],
+  "producer_exit": {
+    "sanitized": true,
+    "async_readback": true,
+    "gpu_snapshots_requested": true,
+    "gpu_snapshots_captured": 1,
+    "gpu_snapshot_cleanup_passed": true,
+    "submission_returned_while_host_paused": true,
+    "producer_confirmed_dead": true,
+    "observer_found_pending_surface": true,
+    "passed": true,
+    "guest_temp_removed": true,
+    "server_stopped": true,
+    "hashes": {
+      "libios-kvm-native-gl.dylib": "17532c82ef2a974482f0d5197cc4f7a673ea2b3823af975e94969d4b11623f5c",
+      "exit-check": "79afaaad10e329b9e524a0d61cc62639bb7509a34af8f3007283731a189caf2a",
+      "host": "bba683cf58e7e3e314cc1ee360ffe0e525f5f93c389c707d117d9f317b9cd946"
+    }
+  },
+  "desktop_capture": {
+    "seconds_requested": 60,
+    "original_restored": true,
+    "native_injection_seen": true,
+    "native_context_seen": true,
+    "actual_host_renderers": [
+      "NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2"
+    ],
+    "async_submission_seen": true,
+    "gpu_snapshots_requested": true,
+    "gpu_snapshots_captured": 583,
+    "gpu_snapshot_cleanup_passed": true,
+    "guest_temp_removed": true,
+    "server_stopped": true,
+    "pending_surfaces_before": 0,
+    "pending_surfaces_after": 0,
+    "hashes": {
+      "server": "635dd07fd78cf9753a6135bde23806bbdbad061c1ad5a2b8ed29a07b8395b58f",
+      "proxy": "17532c82ef2a974482f0d5197cc4f7a673ea2b3823af975e94969d4b11623f5c",
+      "bridge": "83db27f8dc503d20a385878a532ea1f8395a3e4d17fcdd64c81c2594357bc5f1",
+      "injection": "bfe9d9c22125241da601aa707f342ddc683cbb3e476035121c917d785b44f82a"
+    }
+  },
+  "source_sha256": {
+    "gpu-frames.h": "c5f38441269d09c7aa7487c5beebb762006fa05719d30910d2082daa16d4df43",
+    "gpu-frame-check.c": "1abb8dc8b2c65a7f9ac341d416fd85ffa75f11873c0d2c14915e80611154efdf",
+    "server.c": "b691665b26052759cffcc2e5f56bfccf94e27a3d4c8cb684985aa68e7a46a4f1",
+    "server-shared.h": "cac1bb39af63ded1a88f1a53250a5b3d591308babee93bd402d6d60d458aa1b4"
+  },
+  "limitations": [
+    "The prototype retains GPU snapshots alongside CPU readback and adds a GPU copy.",
+    "GPU-only host-window presentation and exact completed-display selection remain outstanding.",
+    "CPU/GPU surface coherence for lazy readback remains outstanding.",
+    "Only RGBA8 render targets were checked by the frozen-frame pixel fixture.",
+    "Physical Intel and AMD hardware, complete app compatibility and iPhone X performance comparisons remain unverified.",
+    "The desktop still has native renderer visual defects.",
+    "Advertised DMA-BUF extension support was queried separately. Export/import and host-window integration remain unverified."
+  ]
+}
