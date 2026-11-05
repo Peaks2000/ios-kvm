@@ -124,7 +124,7 @@ error tracing preserves errors for callers. Bundle hashes and screenshots are
 saved with the result.
 The trace includes errors raised by proxy validation and errors reported by
 the native driver. A120-second November5 trial completed with that broader
-trace enabled and restored its saved configuration. Rendering defects persist.
+trace enabled and restored its saved configuration.
 
 ```sh
 python3 tools/native-gl/try-compositor.py \
@@ -134,10 +134,31 @@ python3 tools/native-gl/try-compositor.py \
 
 The NVIDIA trial in `compositor-handoff-nvidia` reached the home screen and
 completed180 seconds using one native context. Its configuration restoration,
-temporary-file removal and server shutdown were verified. The home screen has
-skew, colour stripes and missing regions. Before-trial VirGL screenshots also
-show skew and colour stripes. Desktop FPS comparisons, gesture behaviour and
-the visual defects require further work before launcher integration.
+temporary-file removal and server shutdown were verified. Early evidence
+images had skew and colour stripes caused by QEMU's PPM screenshot encoding.
+At width750, it wrote2252 bytes per RGB row while the header described2250.
+An ordinary PPM decoder treated padding as pixels. With the VM paused, native
+PNG pixels match a stride-corrected PPM byte for byte. The trial tool now asks
+QEMU for PNG directly. The capture receipt is
+`evidence/capture-stride-20261105.json`. Historical converted screenshots
+cannot establish rendering geometry defects.
+
+A fresh90-second NVIDIA asynchronous trial with direct PNG captures shows
+correct geometry and colours. A missing lower-right region remains visible,
+including clipped search/dock content and absent icons. It restored its saved
+configuration and cleaned up. Receipt
+`.local/native-gl-api/compositor-png-async-20261105`.
+Desktop frame times, gesture behaviour and the missing region require further
+work before launcher integration.
+
+A120-second native LLVMPIPE trial rendered the complete icon grid, dock and
+search area through the same asynchronous proxy. Some labels/calendar text
+were missing, also confirmed by dumping its active guest surface. That trial
+used `LP_NUM_THREADS=4`, restored the ordinary backend and cleaned up. Receipt
+`.local/native-gl-api/compositor-png-software-20261105`.
+These observations narrow the rendering investigation across drivers. They
+provide no physical Intel/AMD hardware validation. The capture tool requires
+QEMU PNG screendump support.
 
 The guest diagnostic creates its own shaders, textures, vertex/index buffers and
 framebuffer. Each rendered frame also checks real native fence completion and

@@ -76,12 +76,10 @@ def remote(command, **kwargs):
     return subprocess.run([*ssh, command], cwd=root, timeout=20, **kwargs)
 
 def screenshot(name):
-    path = a.output / (name + '.ppm')
-    qmp_call(lambda q: q.command('screendump', filename=str(path)))
-    from PIL import Image
-    with Image.open(path) as picture:
-        picture.save(a.output / (name + '.png'))
-    path.unlink()
+    path = a.output / (name + '.png')
+    # QEMU's PPM writer can include aligned RGB row padding absent from the
+    # PPM header. Its PNG writer encodes the actual row stride correctly.
+    qmp_call(lambda q: q.command('screendump', filename=str(path), format='png'))
 
 def config_read():
     return remote('/var/jb/usr/sbin/sysctl -n kern.exec_inject', capture_output=True,

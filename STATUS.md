@@ -1,5 +1,34 @@
 # Local development status
 
+## November 5 capture stride correction and native rendering
+
+- Earlier claims that the native/VirGL renderer skewed geometry and produced
+  colour stripes were based on misdecoded screenshots. QEMU's PPM writer emits
+  2252 bytes per RGB row at width750 while the PPM header describes2250. The
+  image converter treated padding as pixels. A raw guest IOSurface dump shows
+  correct geometry and colours. With the VM paused, every RGB byte of QEMU's
+  native PNG equals the stride-corrected PPM and differs from ordinary PPM
+  decoding. Evidence tools/native-gl/evidence/capture-stride-20261105.json.
+- The compositor trial tool now requests PNG directly. Historical converted
+  PNGs remain untouched and are unreliable evidence of geometry/colour defects.
+  The new90-second NVIDIA asynchronous trial confirms actual retained
+  submissions, correct geometry/colours and a genuinely missing lower-right
+  region, including clipped dock/search content and absent icons. It recorded
+  no GL errors, restored its injection configuration and cleaned up. Receipt
+  `.local/native-gl-api/compositor-png-async-20261105`.
+- The correct VirGL source surface and direct PNG baseline show the entire home
+  screen. GPU-resident presentation still needs native rendering parity and a
+  controlled desktop performance comparison.
+- A120-second LLVMPIPE native trial with the same asynchronous proxy reaches
+  the home screen with all app icons and the complete dock/search region. Some
+  labels and calendar text are missing. A raw dump of its active surface99
+  independently shows the same missing text and intact lower-right region.
+  This narrows the NVIDIA quadrant defect, while common text defects remain.
+  It recorded no GL errors and restored/cleaned up. Software workers were
+  bounded with LP_NUM_THREADS=4, without a software performance claim. Receipt
+  `.local/native-gl-api/compositor-png-software-20261105` and raw surface
+  evidence under `.local/native-gl-api/surface-investigation`.
+
 ## November 5 asynchronous native retained readback
 
 - Added an opt-in native transport mode that sends a tagged retained-surface

@@ -1,0 +1,16 @@
+{
+  "width": 750,
+  "height": 1624,
+  "expected_ppm_row_bytes": 2250,
+  "actual_ppm_row_bytes": 2252,
+  "native_png_equals_correct_stride_ppm": true,
+  "ordinary_ppm_decode_differs": true,
+  "png_sha256": "f66d0a90fa2c6884b73ee81f28448b266acbbcc333aaa6f7a93165c48662f5fb",
+  "ppm_sha256": "e3815290d45c9d8ab4ecb12c34ea1adef3961b5819c6ce70866aaf12c2f1ed1a",
+  "date": "2026-11-05",
+  "scope": "Capture correctness. No VM performance claim.",
+  "method": "Paused the running ios-kvm VM with QMP, captured native PNG and PPM from the same framebuffer, resumed in finally, compared every RGB byte.",
+  "qemu_version": "QEMU emulator version 10.2.2 (qemu-10.2.2-1.fc44)",
+  "source_capture_directory": ".local/native-gl-api/surface-investigation",
+  "fix": "Request QMP screendump format=png directly, avoiding PPM decoding."
+}
