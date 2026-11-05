@@ -31,6 +31,7 @@ static int ng_output(void *output, size_t capacity, size_t *used,
   return 0;
 }
 #include "server-errors.h"
+#include "server-trace.h"
 #include "server-labels.h"
 #include "server-pointers.h"
 #include "server-query.h"
@@ -240,6 +241,8 @@ int main(int argc, char **argv) {
   }
   const char *trace_errors=getenv("IOS_KVM_NATIVE_TRACE_ERRORS");
   ng_trace_driver_errors=trace_errors && !strcmp(trace_errors,"1");
+  const char *trace_draws = getenv("IOS_KVM_NATIVE_TRACE_DRAWS");
+  ng_trace_draws = trace_draws && !strcmp(trace_draws, "1");
   ng_display = ng_choose_display();
   if (ng_display == EGL_NO_DISPLAY || !eglInitialize(ng_display, NULL, NULL) ||
       !eglBindAPI(EGL_OPENGL_ES_API))

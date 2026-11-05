@@ -147,8 +147,7 @@ with tempfile.TemporaryDirectory(prefix='native-exit-', dir=root / '.local') as 
         if server.poll() is not None:
             raise RuntimeError('Host did not survive producer disconnect')
         server_log.flush()
-        server_log.seek(0)
-        log = server_log.read()
+        log = (a.output / 'server.log').read_text()
         if any(s in log for s in ('ERROR: AddressSanitizer', 'runtime error:', 'UndefinedBehaviorSanitizer')):
             raise RuntimeError('Host sanitizer reported an error')
         receipt.update(passed=True, hashes={name: hashlib.sha256((local / name).read_bytes()).hexdigest()

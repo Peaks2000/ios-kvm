@@ -119,6 +119,7 @@ static int ng_shared_read(const uint8_t *data, size_t size, void *output,
   GLint old[4];
   if (ng_pixel_state(1, old))
     goto complete;
+  ng_trace_draw("readback", 0, 0, a[2] * a[3]);
   glReadPixels((GLint)a[0], (GLint)a[1], a[2], a[3], GL_RGBA, a[5], pixels);
   int failed = ng_errors_collect();
   ng_pixel_restore(1, old);
@@ -128,6 +129,7 @@ static int ng_shared_read(const uint8_t *data, size_t size, void *output,
     status = -EIO;
     goto complete;
   }
+  ng_trace_pixels(a[2], a[3], pixels);
   if (a[4] == NG_BGRA)
     ng_swap_rb(pixels, pixels, tight);
 #ifdef NG_SHARED_TEST_HOOKS

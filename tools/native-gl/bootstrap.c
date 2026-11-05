@@ -11,6 +11,9 @@
 #ifndef IOS_KVM_NATIVE_ASYNC_MODE
 #define IOS_KVM_NATIVE_ASYNC_MODE "0"
 #endif
+#ifndef IOS_KVM_NATIVE_SHARED_MODE
+#define IOS_KVM_NATIVE_SHARED_MODE "1"
+#endif
 int ios_kvm_native_gl_environment(void) {
   if (geteuid() != 501) {
     fprintf(stderr, "ios-kvm: native compositor experiment requires UID501\n");
@@ -19,7 +22,7 @@ int ios_kvm_native_gl_environment(void) {
   if (setenv("IOS_KVM_NATIVE_GL_HOST", "10.0.2.2", 1) ||
       setenv("IOS_KVM_NATIVE_GL_PORT", IOS_KVM_NATIVE_PORT, 1) ||
       setenv("IOS_KVM_NATIVE_GL_TOKEN_FILE", IOS_KVM_NATIVE_TOKEN_FILE, 1) ||
-      setenv("IOS_KVM_NATIVE_SHARED", "1", 1) ||
+      setenv("IOS_KVM_NATIVE_SHARED", IOS_KVM_NATIVE_SHARED_MODE, 1) ||
       setenv("IOS_KVM_NATIVE_ASYNC_READBACK", IOS_KVM_NATIVE_ASYNC_MODE, 1) ||
       setenv("IOS_KVM_NATIVE_TRACE_ERRORS", "1", 1) ||
       setenv("IOS_KVM_NATIVE_GL_CHECK_EVERY_CALL", "0", 1)) {

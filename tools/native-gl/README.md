@@ -160,6 +160,29 @@ These observations narrow the rendering investigation across drivers. They
 provide no physical Intel/AMD hardware validation. The capture tool requires
 QEMU PNG screendump support.
 
+Use `--copied-readback` for a synchronous socket-transfer control. It cannot be
+combined with `--async-readback`. The trial requires the guest retained-surface
+counter to be zero before switching. It checks the counter again after
+restoration and host exit. A remaining hold is reported with
+`requires_vm_restart`, and a subsequent trial requires a fresh VM. Producer or
+host loss can still leave a bounded hold until VM shutdown.
+
+Set `IOS_KVM_NATIVE_TRACE_DRAWS=1` on the host for rendering-state diagnostics.
+Each context records up to8192 draw/clear/blit/readback states, up to1024 shader
+parts within1MiB, and256 shader/program associations. Sampled phone-size pixel
+statistics identify the read framebuffer and attachment, including adjacent
+reads to distinguish alternating targets. The trace preserves caller GL errors.
+It adds GPU queries and CPU pixel scans, so its timings measure an instrumented
+workload. Shader source remains in local receipt logs.
+
+The trial's log reader now opens its own file description. Earlier versions
+sought through the descriptor inherited by the child, allowing new output to
+overwrite old lines. Earlier absence-of-error conclusions need rechecking.
+The corrected shared and copied controls have intact, contiguous draw logs and
+restore/cleanup receipts. The copied control renders all icons but misses some
+text. Shared controls show the lower-right defect. Target-matched texture/state
+comparisons remain necessary before attributing that difference to transfer.
+
 The guest diagnostic creates its own shaders, textures, vertex/index buffers and
 framebuffer. Each rendered frame also checks real native fence completion and
 bounded status queries before checking its pixels. It validates every active pixel/channel (tolerance 1) and exact
@@ -232,6 +255,11 @@ binary hashes are in `evidence/async-readback-nvidia-20261105.json`.
 Desktop frame times and physical AMD/Intel hardware remain unverified here.
 
 Run the retained-surface and isolated EAGL checks with `--shared-ram --eagl`.
+The general shared-surface check validates changing spatial pixels and padding
+at257x131,750x1624 and1125x2436. It checks actual submission modes, untagged copied
+fallback and GPU-error completion at every size. Both NVIDIA and LLVMPIPE pass
+these checks with ASan/UBSan hosts. The compositor defect remains outside this
+isolated test's coverage.
 This requires a running VM with shared sealed RAM and the matching kernel pin/
 completion API, with kernel shared/async support enabled. The server advertises
 this feature only when its explicit RAM mapping succeeds; untagged leases and

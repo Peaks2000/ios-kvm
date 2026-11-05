@@ -154,6 +154,7 @@ static int ng_vertex_dispatch(uint32_t op, const uint8_t *data, size_t size,
   }
   int failed = ng_errors_collect();
   if (!failed) {
+    ng_trace_draw("client", a[1], a[2], a[3]);
     if (a[0])
       glDrawElements(a[1], a[3], a[4], (const void *)(uintptr_t)a[5]);
     else

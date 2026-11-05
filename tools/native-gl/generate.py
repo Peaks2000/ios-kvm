@@ -76,6 +76,14 @@ for opcode, (name, (ret, params)) in enumerate(sorted(prototypes.items()), 1):
         server.append(f' {ctype} {pname}; memcpy(&{pname},data+{index*8},sizeof({pname}));')
     if name in ('glLinkProgram', 'glDeleteProgram'):
         server.append(' ng_uniform_forget(program);')
+    if name == 'glAttachShader':
+        server.append(' ng_trace_attach(program,shader);')
+    if name in ('glDrawArrays', 'glDrawArraysInstanced'):
+        server.append(f' ng_trace_draw("{name}",mode,first,count);')
+    elif name == 'glClear':
+        server.append(' ng_trace_draw("glClear",mask,0,0);')
+    elif name == 'glBlitFramebuffer':
+        server.append(' ng_trace_draw("glBlitFramebuffer",mask,0,0);')
     call = f'{name}({", ".join(n for _,n in params)})'
     if name == 'glGetError':
         call = 'ng_error_get()'

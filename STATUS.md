@@ -1,5 +1,52 @@
 # Local development status
 
+## November 5 native rendering controls and trial reliability
+
+- Added bounded, opt-in host draw-state, shader/program and readback pixel
+  diagnostics through IOS_KVM_NATIVE_TRACE_DRAWS=1. Pixel samples now identify
+  the read framebuffer/attachment and include adjacent reads. A single sample
+  from an alternating off-screen target cannot establish the displayed image.
+  The renderer's missing region remains unresolved. Trace timings include
+  instrumentation and are not desktop performance measurements.
+- Fixed a live-log race in try-compositor.py. Seeking the file descriptor also
+  inherited by the child moved its write offset and could overwrite evidence.
+  The trial and process-exit checker now read through independent descriptions.
+  Earlier absence-of-error conclusions from mutable trial logs need rechecking.
+  New shared/copied controls have contiguous draw IDs and retained renderer
+  headers, with no recorded GL errors in their complete logs.
+- A copied-readback trial on the existing VM encountered an un-lockable surface
+  and incomplete framebuffer. Inspection found one retained4898816-byte surface,
+  and IOSurface2 could not be locked. Synced/stopped and freshly booted the VM,
+  confirming the pending counter returned to0. The trial now rejects a nonzero
+  starting counter and checks after server exit, reporting requires_vm_restart
+  when holds remain. Interrupted producer/host work can still require a reboot.
+- Added --copied-readback as the synchronous transfer control. A fresh copied
+  run rendered the full icon grid with missing text, but its final renderer gate
+  failed after the logging race erased its header. A repeated copied control
+  with fixed logging passed its observation/restore/cleanup gates and again
+  shows full icons with missing text. Synchronous shared controls retain the
+  lower-right defect. Readback samples without attachment IDs were ambiguous.
+  A target-matched comparison is the next rendering investigation.
+- Corrected control receipts are compositor-pixels-shared-nvidia-20261105 and
+  compositor-copied-final-nvidia-20261105 under .local/native-gl-api. They start
+  and finish with0 retained surfaces and restore the ordinary injection. Their
+  draw logs contain contiguous sequences1..7647 and1..2484, respectively.
+- Expanded shared readback correctness from257x131 to include changing spatial
+  shaders at750x1624 and1125x2436. Every pixel and padding byte is checked,
+  along with submission counters, untagged fallback and GPU-error completion.
+  CPU throughput, GPU-resident presentation, physical Intel/AMD checks and
+  faster-than-iPhone-X performance remain unverified.
+- Final NVIDIA and LLVMPIPE ASan/UBSan suites pass as UID/GID501 with the
+  target-aware trace enabled. All three spatial sizes, API/format coverage,
+  error preservation, EAGL macro/thread checks and context races pass. Guest
+  files were removed and servers stopped. Receipts
+  `.local/native-gl-api/target-trace-final-{nvidia,software}-20261105`.
+  The updated process-exit checker also passes with asynchronous submission,
+  paused host, confirmed producer death, surviving-reader pixels and cleanup.
+  Receipt `.local/native-gl-api/target-trace-exit-nvidia-20261105`.
+  Conflicting copied/asynchronous trial flags are rejected before profile,
+  output-directory or VM operations. Strict builds and Python syntax checks pass.
+
 ## November 5 capture stride correction and native rendering
 
 - Earlier claims that the native/VirGL renderer skewed geometry and produced

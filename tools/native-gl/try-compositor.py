@@ -25,7 +25,10 @@ p.add_argument('--output', type=Path, required=True)
 p.add_argument('--port', type=int, default=6777)
 p.add_argument('--seconds', type=int, default=60, choices=range(15, 301), metavar='15..300')
 p.add_argument('--async-readback', action='store_true')
+p.add_argument('--copied-readback', action='store_true', help='Use the synchronous socket readback control')
 a = p.parse_args()
+if a.copied_readback and a.async_readback:
+    p.error('--copied-readback and --async-readback are mutually exclusive')
 if not 1024 <= a.port <= 65535:
     p.error('invalid port')
 selected = json.loads(a.profile.read_text())['selected']
@@ -89,9 +92,17 @@ def config_write(config, log):
     command = '/var/jb/usr/sbin/sysctl -w ' + shlex.quote('kern.exec_inject=' + config)
     remote(command, stdout=log, stderr=log, check=True)
 
+def pending_surfaces():
+    value = int(remote('/var/jb/usr/sbin/sysctl -n kern.ios_kvm_pending_surfaces',
+                       capture_output=True, text=True, check=True).stdout.strip())
+    if not 0 <= value <= 128:
+        raise RuntimeError('Invalid retained-surface counter')
+    return value
+
 receipt = {'scope': 'Temporary native compositor trial; not desktop compatibility or performance proof',
            'selected': selected, 'seconds_requested': a.seconds, 'original_restored': False,
-           'async_readback_requested': a.async_readback}
+           'async_readback_requested': a.async_readback,
+           'copied_readback_requested': a.copied_readback}
 server = None
 guest = None
 original = None
@@ -115,11 +126,15 @@ with tempfile.TemporaryDirectory(prefix='native-desktop-', dir=root / '.local') 
                     '-DIOS_KVM_NATIVE_TOKEN_FILE=' + json.dumps(mobile + '/token'),
                     '-DIOS_KVM_NATIVE_PORT=' + json.dumps(str(a.port)),
                     '-DIOS_KVM_NATIVE_ASYNC_MODE=' + json.dumps(str(int(a.async_readback))),
+                    '-DIOS_KVM_NATIVE_SHARED_MODE=' + json.dumps(str(int(not a.copied_readback))),
                     '-install_name', mobile + '/' + injection.name,
                     '-framework', 'CoreFoundation', '-framework', 'IOKit', '-lobjc',
                     str(root / 'vendor/hakios/userland/src/inject.c'),
                     str(root / 'tools/native-gl/bootstrap.c'), '-o', str(injection)], check=True)
     try:
+        receipt['pending_surfaces_before'] = pending_surfaces()
+        if receipt['pending_surfaces_before']:
+            raise RuntimeError('Guest has retained host surfaces from earlier work; restart the VM before this trial')
         original = config_read()
         if 'native-desktop-' in original:
             raise RuntimeError('A previous native experiment is still selected; restore it first')
@@ -195,8 +210,9 @@ with tempfile.TemporaryDirectory(prefix='native-desktop-', dir=root / '.local') 
                 output = log.read()
             (a.output / 'vm-native.log').write_text(output)
             server_log.flush()
-            server_log.seek(0)
-            host_output = server_log.read()
+            # The child inherits this file description. Seeking it here also
+            # moves the child's write offset and can overwrite earlier logs.
+            host_output = (a.output / 'server.log').read_text()
             for marker in ('ios-kvm native GL:', 'native shared readback failed', 'CALLED AND NOT THERE', 'A SHADER DOES NOT COMPILE', 'A PROGRAM DOES NOT LINK'):
                 if marker in output:
                     receipt['failure_marker'] = marker
@@ -257,9 +273,20 @@ with tempfile.TemporaryDirectory(prefix='native-desktop-', dir=root / '.local') 
             receipt['recovery_guest_directory'] = guest
             receipt['recovery_server_pid'] = server.pid if server else None
         receipt['server_stopped'] = not server or server.poll() is not None
+        if changed and safe_to_stop and receipt['server_stopped']:
+            try:
+                receipt['pending_surfaces_after'] = pending_surfaces()
+                if receipt['pending_surfaces_after']:
+                    receipt['requires_vm_restart'] = True
+                    failure = failure or 'Retained host surfaces remain after server exit; restart the VM before another trial'
+            except Exception as exc:
+                receipt['pending_surface_check_error'] = str(exc)
+                failure = failure or 'Could not verify retained-surface cleanup'
         receipt['hashes'] = {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in
                              [('server', server_binary), ('proxy', proxy),
                               ('bridge', bridge), ('injection', injection)]}
+        if failure:
+            receipt['error'] = failure
         (a.output / 'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
 if failure or not receipt['original_restored']:
     raise SystemExit(f'Native compositor trial stopped: {failure}; receipts in {a.output}')

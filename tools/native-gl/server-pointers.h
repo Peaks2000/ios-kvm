@@ -194,6 +194,7 @@ static int ng_pointer(uint32_t opcode, const uint8_t *data, size_t size,
     }
     if (at != bytes)
       goto source_done;
+    ng_trace_shader(a[0], count, strings, lengths);
     glShaderSource(a[0], count, strings, lengths);
     result = 0;
   source_done:
@@ -229,6 +230,7 @@ static int ng_pointer(uint32_t opcode, const uint8_t *data, size_t size,
     glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &buffer);
     if (!buffer)
       return -1;
+    ng_trace_draw("glDrawElements", a[0], 0, (GLsizei)a[1]);
     glDrawElements(a[0], (GLsizei)a[1], a[2], (const void *)(uintptr_t)a[3]);
     return 0;
   }
@@ -334,10 +336,14 @@ static int ng_pointer(uint32_t opcode, const uint8_t *data, size_t size,
       return -1;
     ng_errors_collect();
     uint8_t *pixels = (uint8_t *)output + 4;
+    ng_trace_draw("copied-readback", 0, 0, a[2] * a[3]);
     glReadPixels((GLint)a[0], (GLint)a[1], a[2], a[3],
                  a[4] == NG_BGRA ? GL_RGBA : a[4], ng_pixel_native_type(a[5]),
                  pixels);
     int32_t failed = ng_errors_collect();
+    if (!failed && (a[4] == GL_RGBA || a[4] == NG_BGRA) &&
+        a[5] == GL_UNSIGNED_BYTE)
+      ng_trace_pixels(a[2], a[3], pixels);
     if (!failed && a[4] == NG_BGRA)
       ng_swap_rb(pixels, pixels, n);
     ng_pixel_restore(1, old);

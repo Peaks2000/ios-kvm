@@ -9,11 +9,11 @@ static void surface_number(CFMutableDictionaryRef d, CFStringRef key,
   CFDictionarySetValue(d, key, n);
   CFRelease(n);
 }
-static void shared_surface_check(void) {
+static void shared_surface_size_check(unsigned w, unsigned h, unsigned row,
+                                      unsigned frames) {
   const char *mode = getenv("IOS_KVM_NATIVE_SHARED");
   if (!mode || strcmp(mode, "1"))
     return;
-  const unsigned w = 257, h = 131, row = 1088;
   CFMutableDictionaryRef d =
       CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks,
                                 &kCFTypeDictionaryValueCallBacks);
@@ -71,7 +71,7 @@ static void shared_surface_check(void) {
   require(lease != NULL, "explicit surface pin");
   uint64_t before = ios_kvm_native_gl_shared_submissions();
   uint64_t async_before = ios_kvm_native_gl_async_submissions();
-  for (unsigned frame = 0; frame < 12; frame++) {
+  for (unsigned frame = 0; frame < frames; frame++) {
     require(IOSurfaceLock(surface, 0, NULL) == 0, "surface writer lock");
     glUniform1f(phase, (frame + 1) / 16.0f);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, NULL);
@@ -109,7 +109,7 @@ static void shared_surface_check(void) {
     usleep(2000);
   }
   uint64_t submitted = ios_kvm_native_gl_shared_submissions() - before;
-  require(submitted == 12, "twelve actual retained shared reads");
+  require(submitted == frames, "actual retained shared reads at this size");
   const char *async_mode = getenv("IOS_KVM_NATIVE_ASYNC_READBACK");
   int asynchronous = async_mode && !strcmp(async_mode, "1");
   require(ios_kvm_native_gl_async_submissions() - async_before ==
@@ -169,6 +169,15 @@ static void shared_surface_check(void) {
   glDeleteFramebuffers(1, &fbo);
   glDeleteTextures(1, &texture_id);
   glPixelStorei(GL_PACK_ROW_LENGTH, 0);
-  puts("Native shared IOSurface check PASSED (12 retained reads, padded "
-       "pixels, untagged fallback, GL error completion)");
+  printf("Native shared IOSurface size PASSED (%ux%u, %u retained spatial "
+         "frames, padding, fallback, GL error completion)\n", w, h, frames);
+}
+static void shared_surface_check(void) {
+  shared_surface_size_check(257, 131, 1088, 12);
+  shared_surface_size_check(750, 1624, 3072, 2);
+  shared_surface_size_check(1125, 2436, 4544, 2);
+  const char *mode = getenv("IOS_KVM_NATIVE_SHARED");
+  if (mode && !strcmp(mode, "1"))
+    puts("Native shared IOSurface check PASSED (three sizes, spatial pixels, "
+         "padding, untagged fallback, GL error completion)");
 }

@@ -152,7 +152,8 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
                    f'IOS_KVM_NATIVE_BENCH_VERTEX_STATE={int(a.benchmark_vertex_state)} '
                    f'IOS_KVM_NATIVE_GL_CHECK_EVERY_CALL={int(a.eagl_check_every_call)}; '
                    f'{launch}{shlex.quote(guest_path + "/guest-check")}')
-        result = subprocess.run([*ssh, command], cwd=root, capture_output=True, text=True, timeout=180 if a.benchmark else 45)
+        result = subprocess.run([*ssh, command], cwd=root, capture_output=True, text=True,
+                                timeout=180 if a.benchmark else 90 if a.shared_ram else 45)
         output = result.stdout + result.stderr
         (a.output / 'guest.log').write_text(output)
         if result.returncode or 'Native GL general API check PASSED' not in output:
