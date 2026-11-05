@@ -27,6 +27,8 @@
 #include <pexpert/pexpert.h>
 #include <sys/systm.h>
 #include <sys/proc.h>
+#include <sys/sysctl.h>
+#include <os/atomic_private.h>
 
 extern "C" {
 #include <console/video_console.h>
@@ -36,6 +38,7 @@ extern struct vc_info vinfo;            /* the boot framebuffer, as the text con
 #include <IOKit/IOBufferMemoryDescriptor.h>
 
 #include "MiniIOSurface.h"
+#include "MiniIOMobileFramebufferState.h"
 
 extern "C" void hakios_tl(const char * format, ...) __printflike(1, 2);
 
@@ -259,6 +262,7 @@ class IOMobileFramebuffer : public IOService
 
 public:
 	IOLock *        fLock;
+	struct ios_kvm_display_state fPresentation;
 	uint8_t *       fBase;                  /* the boot framebuffer: the panel */
 	uint32_t        fPanelWidth, fPanelHeight, fRowBytes;
 	uint32_t        fWidth, fHeight;        /* the display as user space sees it */
@@ -349,6 +353,31 @@ public:
 
 OSDefineMetaClassAndStructors(IOMobileFramebuffer, IOService);
 
+/* The built-in primary display stays retained for the kernel lifetime. */
+static IOMobileFramebuffer * gPresentedFramebuffer;
+
+static int
+ios_kvm_display_state_sysctl SYSCTL_HANDLER_ARGS
+{
+	IOMobileFramebuffer * fb = os_atomic_load(&gPresentedFramebuffer, acquire);
+	if (fb == NULL) {
+		return ENXIO;
+	}
+	struct ios_kvm_display_state state;
+	IOLockLock(fb->fLock);
+	state = fb->fPresentation;
+	IOLockUnlock(fb->fLock);
+	if (state.sequence == 0) {
+		return EAGAIN;
+	}
+	return SYSCTL_OUT(req, &state, sizeof(state));
+}
+
+SYSCTL_PROC(_kern, OID_AUTO, ios_kvm_display_state,
+    CTLTYPE_OPAQUE | CTLFLAG_RD | CTLFLAG_LOCKED, 0, 0,
+    ios_kvm_display_state_sysctl, "S,ios_kvm_display_state",
+    "Last completed primary-display presentation request");
+
 static void
 setNumber(OSDictionary * dict, const char * key, uint64_t value)
 {
@@ -437,6 +466,7 @@ IOMobileFramebuffer::start(IOService * provider)
 		thread_deallocate(thread);
 	}
 	fLock = IOLockAlloc();
+	bzero(&fPresentation, sizeof(fPresentation));
 	fSwapLock = IOLockAlloc();
 	if (kernel_thread_start(&IOMobileFramebuffer::presenterMain, this, &thread) != KERN_SUCCESS) {
 		IOLog("MiniIOMobileFramebuffer: no thread to put frames on the panel with\n");
@@ -514,6 +544,8 @@ IOMobileFramebuffer::start(IOService * provider)
 	setProperty("HakiosWaitsForGPU", kOSBooleanTrue);
 	publishModes();
 	setName("disp0");
+	retain();
+	os_atomic_store(&gPresentedFramebuffer, this, release);
 	registerService();
 	return true;
 }
@@ -1152,6 +1184,24 @@ IOMobileFramebuffer::show(const uint8_t * swap, MiniIOSurface ** surfaces)
 		}
 	}
 	drawn = mach_absolute_time();
+	fPresentation.version = IOS_KVM_DISPLAY_STATE_VERSION;
+	fPresentation.size = sizeof(fPresentation);
+	fPresentation.sequence++;
+	fPresentation.swap_id = swapWord(swap, SWAP_ID);
+	fPresentation.layers_set = set;
+	fPresentation.layers_cleared = swapWord(swap, SWAP_LAYERS_CLEARED);
+	fPresentation.width = fWidth;
+	fPresentation.height = fHeight;
+	fPresentation.panel_width = fPanelWidth;
+	fPresentation.panel_height = fPanelHeight;
+	fPresentation.row_bytes = fRowBytes;
+	for (unsigned layer = 0; layer < SWAP_LAYERS; layer++) {
+		struct ios_kvm_display_layer * state = &fPresentation.layers[layer];
+		state->surface = swapWord(swap, SWAP_SURFACE(layer));
+		state->enabled = swapWord(swap, SWAP_ENABLED(layer));
+		memcpy(state->source, swap + SWAP_SOURCE(layer), sizeof(state->source));
+		memcpy(state->destination, swap + SWAP_DEST(layer), sizeof(state->destination));
+	}
 	if (recorded != NULL) {
 		record(recorded);
 	}

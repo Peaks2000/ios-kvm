@@ -32,7 +32,7 @@ bash xnu-deps/setup.sh --stage1
 python3 tools/hakios-config.py defconfig qemu
 python3 tools/hakios-config.py kernel --tree xnu-src/xnu-8796.121.2
 # apply.sh installs this on a fresh tree; update existing trees after our API changes.
-for file in iokit/Kernel/MiniIOSurface.cpp iokit/Kernel/MiniIOSurface.h iokit/Kernel/MiniIOMobileFramebuffer.cpp osfmk/arm64/generic_arm64_support.c osfmk/arm64/user_exception_trace.c osfmk/minicrypto/mc_provider.c; do
+for file in iokit/Kernel/MiniIOSurface.cpp iokit/Kernel/MiniIOSurface.h iokit/Kernel/MiniIOMobileFramebuffer.cpp iokit/Kernel/MiniIOMobileFramebufferState.h osfmk/arm64/generic_arm64_support.c osfmk/arm64/user_exception_trace.c osfmk/minicrypto/mc_provider.c; do
     if ! cmp -s "xnu/files/$file" "xnu-src/xnu-8796.121.2/$file"; then
         cp -p "xnu/files/$file" "xnu-src/xnu-8796.121.2/$file"
     fi

@@ -5,7 +5,8 @@ static _Thread_local size_t ng_trace_shader_bytes;
 static _Thread_local unsigned ng_trace_shader_parts, ng_trace_attach_count;
 static _Thread_local unsigned ng_trace_frame_count;
 static void ng_trace_pixels(GLsizei width, GLsizei height,
-                            const uint8_t *pixels) {
+                            const uint8_t *pixels, uint64_t cell,
+                            uint32_t sequence) {
   if (!ng_trace_draws || width < 750 || height < 1624 ||
       ng_trace_frame_count >= 1024)
     return;
@@ -26,8 +27,9 @@ static void ng_trace_pixels(GLsizei width, GLsizei height,
       alpha[quadrant] += pixel[3] != 0;
     }
   fprintf(stderr,
-          "native pixels frame=%u read_fbo=%d attachment=%d size=%dx%d "
-          "coloured=%u,%u,%u,%u alpha=%u,%u,%u,%u\n", frame, framebuffer,
+          "native pixels frame=%u cell=%#llx sequence=%u read_fbo=%d attachment=%d size=%dx%d "
+          "coloured=%u,%u,%u,%u alpha=%u,%u,%u,%u\n", frame,
+          (unsigned long long)cell, sequence, framebuffer,
           attachment, width, height, coloured[0],
           coloured[1], coloured[2], coloured[3], alpha[0], alpha[1], alpha[2],
           alpha[3]);

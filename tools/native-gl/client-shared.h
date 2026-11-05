@@ -5,6 +5,7 @@ struct ng_pin {
   io_connect_t connection;
   void *destination;
   uint32_t bytes, count, surface;
+  uint64_t traced_completion;
   uint64_t segments[8192];
 };
 static _Thread_local struct ng_pin *ng_active_pin;
@@ -106,6 +107,12 @@ static int ng_shared_try_read(GLint x, GLint y, GLsizei w, GLsizei h,
     ng_failure("invalid retained-surface completion");
   a[9] = out[0];
   a[10] = out[1];
+  const char *trace = getenv("IOS_KVM_NATIVE_TRACE_ERRORS");
+  if (trace && !strcmp(trace, "1") && p->traced_completion != out[0]) {
+    fprintf(stderr, "native retained surface pid=%d surface=%u cell=%#llx\n",
+            getpid(), p->surface, (unsigned long long)out[0]);
+    p->traced_completion = out[0];
+  }
   memcpy(request, a, sizeof(a));
   atomic_fetch_add(&ng_shared_submissions, 1);
   const char *async_mode = getenv("IOS_KVM_NATIVE_ASYNC_READBACK");
@@ -113,7 +120,6 @@ static int ng_shared_try_read(GLint x, GLint y, GLsizei w, GLsizei h,
     ng_enqueue(NG_READ_SHARED, request, length);
     ng_submit_context(ng_current(), NULL, 4, 1);
     uint64_t previous = atomic_fetch_add(&ng_shared_async_submissions, 1);
-    const char *trace = getenv("IOS_KVM_NATIVE_TRACE_ERRORS");
     if (!previous && trace && !strcmp(trace, "1"))
       fprintf(stderr, "native GLES asynchronous retained submission active\n");
     free(request);

@@ -1,0 +1,50 @@
+{
+  "scope": "Read-only completed-presentation snapshot and native capture correctness validation.",
+  "date": "2026-11-05",
+  "kernel_sha256": "d29ef601948fcd420918754a65daff1a19e686a8071bad8893a51a504e86e574",
+  "abi_bytes": 208,
+  "write_as_root": {
+    "result": -1,
+    "errno": 1
+  },
+  "native_navigation_completed": true,
+  "stable_capture": {
+    "sequence_before": 13023,
+    "sequence_after": 13023,
+    "surface_before": 35,
+    "surface_after": 35,
+    "source_equals_framebuffer_rgb": true,
+    "framebuffer_equals_qemu_png": true,
+    "source_nonblack_pixels_by_quadrant": [
+      112493,
+      111010,
+      105072,
+      0
+    ]
+  },
+  "native_trial": {
+    "original_restored": true,
+    "native_injection_seen": true,
+    "native_context_seen": true,
+    "async_submission_seen": true,
+    "actual_host_renderers": [
+      "NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2"
+    ],
+    "guest_temp_removed": true,
+    "server_stopped": true,
+    "pending_surfaces_before": 0,
+    "pending_surfaces_after": 0,
+    "hashes": {
+      "server": "fafae0bda1ad9d7f70d39c1345ad3d18be9149b4d021a82ce6864bf27b286aa3",
+      "proxy": "e6716cd7180459e6bea0a478323022be109e6e1e6f59e71772dff9c692d0337c",
+      "bridge": "83db27f8dc503d20a385878a532ea1f8395a3e4d17fcdd64c81c2594357bc5f1",
+      "injection": "622eebc98531e2c44a857ca527f0525271ed2fe0f1e220d9c2e29d588fd792b0"
+    }
+  },
+  "limitations": [
+    "Source and framebuffer agreed at a stable completed sequence with the lower-right content defect present. Rendering root cause remains unresolved.",
+    "Initial and return captures changed sequence during collection and do not establish a stable source-to-display comparison.",
+    "Failed user-space swap interposition was removed.",
+    "Physical Intel/AMD testing remains outstanding."
+  ]
+}

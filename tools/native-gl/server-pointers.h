@@ -343,7 +343,7 @@ static int ng_pointer(uint32_t opcode, const uint8_t *data, size_t size,
     int32_t failed = ng_errors_collect();
     if (!failed && (a[4] == GL_RGBA || a[4] == NG_BGRA) &&
         a[5] == GL_UNSIGNED_BYTE)
-      ng_trace_pixels(a[2], a[3], pixels);
+      ng_trace_pixels(a[2], a[3], pixels, 0, 0);
     if (!failed && a[4] == NG_BGRA)
       ng_swap_rb(pixels, pixels, n);
     ng_pixel_restore(1, old);

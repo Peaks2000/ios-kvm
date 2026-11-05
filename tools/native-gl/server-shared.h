@@ -129,7 +129,7 @@ static int ng_shared_read(const uint8_t *data, size_t size, void *output,
     status = -EIO;
     goto complete;
   }
-  ng_trace_pixels(a[2], a[3], pixels);
+  ng_trace_pixels(a[2], a[3], pixels, completion, sequence);
   if (a[4] == NG_BGRA)
     ng_swap_rb(pixels, pixels, tight);
 #ifdef NG_SHARED_TEST_HOOKS
