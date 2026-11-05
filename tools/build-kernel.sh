@@ -38,6 +38,7 @@ for file in iokit/Kernel/MiniIOSurface.cpp iokit/Kernel/MiniIOSurface.h iokit/Ke
     fi
 done
 python3 "$root/tools/apply-cpu-tuning.py"
+python3 "$root/tools/apply-display-mapping.py"
 bash xnu-deps/setup.sh --stage2
 export KERNEL="xnu-src/xnu-8796.121.2/BUILD/obj/${configuration}_ARM64_BCM2837/mach.${configuration,,}.bcm2837"
 extra=()
