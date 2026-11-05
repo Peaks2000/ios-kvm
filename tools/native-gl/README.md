@@ -228,7 +228,7 @@ errors. The default shared mode waits for the normal RPC acknowledgement.
 without its socket reply. The host executes each context's stream in order and
 publishes success or failure in the existing kernel completion cell. A CPU
 consumer must lock the IOSurface before accessing its pixels. Untagged reads,
-queries and `glFinish` keep their synchronous contracts. Wire version 9 rejects
+queries and `glFinish` keep their synchronous contracts. Wire version 10 rejects
 older peers, and only batches ending in a retained read may suppress a reply.
 The copied fallback remains available before a kernel hold is obtained.
 A failed request after obtaining a kernel hold never
@@ -289,7 +289,8 @@ The reviewed receipts and binary hashes are in
 opt-in GPU snapshots alongside the existing CPU transfers. The host copies the
 read framebuffer into an owned RGBA texture, creates a preserved EGLImage and
 publishes an EGL fence. A separate context can import and sample that image.
-Each frame has an exact connection owner, completion address and sequence key.
+Each frame has an exact connection owner, kernel surface-lifetime epoch,
+completion address and submission sequence key.
 The store retains at most eight images, including consumer leases. Its 64 MiB
 logical pixel budget counts width × height × 4 bytes per image. Actual driver
 allocations include additional storage and overhead.
@@ -314,8 +315,8 @@ integration with exact scatter/gather writes and disconnect cleanup.
 `try-compositor.py --async-readback --gpu-snapshots` selects the same temporary,
 self-restoring desktop experiment. `run-exit-check.py --async-readback
 --gpu-snapshots` tests a producer killed while its host is paused. Snapshot
-capture is off by default. Actual host-window presentation, exact display-request
-selection and lazy CPU/GPU surface coherence remain integration work. The
+capture is off by default. Live host-window presentation and lazy CPU/GPU
+surface coherence remain integration work. The
 current snapshot prototype still performs the CPU readback and adds a GPU copy.
 Its tests establish correctness and lifetime behavior. End-to-end speed needs
 measurement after display integration.
@@ -381,6 +382,47 @@ changes when the layer mask changes and cannot identify every presented surface.
 Opt-in native tracing also correlates retained surface IDs and producer PIDs
 with host readback completion cells and sequences. Copied reads report zero for
 the cell and sequence.
+
+### Surface generations for host presentation
+
+The matching kernel adds retained-read selector `0x103`, returning completion
+address, sequence and a nonzero surface-lifetime epoch. Epochs distinguish a new
+surface from an older surface that used the same memory address. Sequences and
+epochs refuse exhaustion. Legacy selector `0x102` retains its two-output ABI.
+The client retries `0x102` when `0x103` reports unsupported, keeping older kernels
+usable. Wire version 10 carries the epoch in retained reads. Legacy epoch-zero
+frames remain available through connection-scoped lookup.
+
+Read-only selector `0x104` queries the exact surface through the caller's
+existing physical pin. It creates no retention hold. The GPU key becomes
+eligible when its issuing writer unlocks with the expected seed. A subsequent
+reported CPU write revokes eligibility. Read-only locks preserve it. Known GPU
+failure completions are ineligible. The kernel's lock API tracks reported
+writes. Raw memory writes outside that API are outside this guarantee.
+
+`kern.ios_kvm_display_frame` exports a read-only 312-byte versioned snapshot.
+`display-state --frame` prints it. Each display queue entry captures four keys.
+After panel completion, a key is published only when its current surface key
+still matches the queued generation. The existing 208-byte display-state ABI
+is preserved. Host global lookup requires the full nonzero key and rejects
+ambiguous matches across connections. Pixel format, captured extent and layer
+composition must also be checked before choosing an image for presentation.
+
+`run-check.py --shared-ram --async-readback --eagl --gpu-snapshots
+--require-frame-key` validates three surface sizes, stable lifetime epochs,
+advancing submissions, read-only preservation, CPU-write revocation and GPU
+failure rejection. NVIDIA and LLVMPIPE pass these checks with the matching
+kernel. An older kernel passes the full suite through automatic legacy fallback.
+The host fixture also checks reused addresses, distinct epochs, ambiguous
+owners and held images surviving revocation. Sanitized results are recorded in
+`evidence/frame-keys-20261105.json`.
+
+A desktop collection on the final kernel found four distinct eligible completed
+display keys, each matching a captured host-frame record. Four other samples
+had no eligible GPU key. This establishes the metadata join. Cache residence,
+source-pixel equivalence and live window integration still need validation.
+The CPU readback and guest panel copy are still performed. Desktop speed gains
+from this change have yet to be measured.
 
 The readiness check allows up to five seconds for outstanding retained reads to
 drain. The counter is shared with the ordinary rendering backend, so a transient

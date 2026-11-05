@@ -9,8 +9,10 @@
 #include <GLES3/gl3.h>
 #include <pthread.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "../../vendor/hakios/xnu/files/iokit/Kernel/MiniIOSurfaceFrame.h"
 
 #define NG_GPU_FRAME_LIMIT 8
 #define NG_GPU_BYTE_LIMIT (UINT64_C(64) << 20)
@@ -18,7 +20,7 @@ struct ng_gpu_frame {
   struct ng_gpu_frame *next;
   EGLImageKHR image;
   EGLSyncKHR fence;
-  uint64_t owner, cell, bytes;
+  uint64_t owner, cell, bytes, epoch;
   uint32_t sequence, references;
   GLsizei width, height;
   int published;
@@ -39,7 +41,7 @@ static struct {
   struct ng_gpu_frame *frames;
   struct ng_gpu_frame_stats stats;
   uint64_t next_owner;
-  int enabled;
+  int enabled, trace;
 } ng_gpu = {.lock = PTHREAD_MUTEX_INITIALIZER};
 static _Thread_local uint64_t ng_gpu_owner;
 
@@ -78,6 +80,8 @@ static int ng_gpu_frames_init(EGLDisplay display, int enabled) {
     return -1;
   ng_gpu.display = display;
   ng_gpu.enabled = 1;
+  const char *trace = getenv("IOS_KVM_NATIVE_TRACE_DRAWS");
+  ng_gpu.trace = trace && !strcmp(trace, "1");
   return 0;
 }
 static int ng_gpu_errors(void) {
@@ -108,10 +112,10 @@ static inline struct ng_gpu_frame_stats ng_gpu_frame_stats_read(void) {
   return stats;
 }
 /* Call after the request's RAM spans, completion cell and dimensions validate.
- * The key is connection-owned. A future display bridge must supply an exact
- * owner and generation, rather than selecting a frame solely by address. */
+ * Frames remain connection-owned. A nonzero kernel epoch also permits exact
+ * generation lookup across connections without selecting by address alone. */
 static int ng_gpu_frame_capture(GLint x, GLint y, GLsizei width, GLsizei height,
-                                 uint64_t cell, uint32_t sequence) {
+                                 uint64_t cell, uint32_t sequence, uint64_t epoch) {
   if (!ng_gpu.enabled)
     return 0;
   if (x < 0 || y < 0 || width <= 0 || height <= 0 || width > 4096 ||
@@ -128,7 +132,7 @@ static int ng_gpu_frame_capture(GLint x, GLint y, GLsizei width, GLsizei height,
   }
   for (struct ng_gpu_frame *frame = ng_gpu.frames; frame; frame = frame->next)
     if (frame->owner == ng_gpu_owner && frame->cell == cell &&
-        frame->sequence == sequence) {
+        frame->sequence == sequence && frame->epoch == epoch) {
       ng_gpu.stats.dropped++;
       pthread_mutex_unlock(&ng_gpu.lock);
       return 0;
@@ -195,6 +199,7 @@ static int ng_gpu_frame_capture(GLint x, GLint y, GLsizei width, GLsizei height,
   *frame = (struct ng_gpu_frame){.image = frame->image, .fence = frame->fence,
                                  .owner = ng_gpu_owner, .cell = cell,
                                  .bytes = bytes, .sequence = sequence,
+                                 .epoch = epoch,
                                  .references = 1, .width = width,
                                  .height = height, .published = 1};
   struct ng_gpu_frame **tail = &ng_gpu.frames;
@@ -204,22 +209,41 @@ static int ng_gpu_frame_capture(GLint x, GLint y, GLsizei width, GLsizei height,
   ng_gpu.stats.live_bytes += bytes;
   ng_gpu.stats.live_frames++;
   ng_gpu.stats.captured++;
+  if (ng_gpu.trace && ng_gpu.stats.captured <= 1024)
+    fprintf(stderr, "native GPU frame owner=%llu epoch=%llu cell=%#llx sequence=%u size=%dx%d\n",
+            (unsigned long long)frame->owner, (unsigned long long)frame->epoch,
+            (unsigned long long)frame->cell, frame->sequence, frame->width, frame->height);
   pthread_mutex_unlock(&ng_gpu.lock);
   return 1;
 }
 static inline struct ng_gpu_frame *ng_gpu_frame_acquire(uint64_t owner, uint64_t cell,
-                                                 uint32_t sequence) {
+                                                 uint32_t sequence, uint64_t epoch) {
+  if (!owner && !epoch)
+    return NULL;
   pthread_mutex_lock(&ng_gpu.lock);
-  struct ng_gpu_frame *frame = ng_gpu.frames;
-  while (frame && (!frame->published || frame->owner != owner ||
-                   frame->cell != cell || frame->sequence != sequence))
-    frame = frame->next;
-  if (frame && frame->references != UINT32_MAX)
-    frame->references++;
+  struct ng_gpu_frame *found = NULL;
+  for (struct ng_gpu_frame *frame = ng_gpu.frames; frame; frame = frame->next) {
+    if (!frame->published || (owner && frame->owner != owner) ||
+        frame->cell != cell || frame->sequence != sequence || frame->epoch != epoch)
+      continue;
+    if (found) {
+      found = NULL;
+      break;
+    }
+    found = frame;
+  }
+  if (found && found->references != UINT32_MAX)
+    found->references++;
   else
-    frame = NULL;
+    found = NULL;
   pthread_mutex_unlock(&ng_gpu.lock);
-  return frame;
+  return found;
+}
+static inline struct ng_gpu_frame *ng_gpu_frame_acquire_key(
+    const struct ios_kvm_surface_frame_key *key) {
+  if (!key || !key->epoch || !key->cell || !key->sequence || key->reserved || (key->cell & 7))
+    return NULL;
+  return ng_gpu_frame_acquire(0, key->cell, key->sequence, key->epoch);
 }
 static inline void ng_gpu_frame_release(struct ng_gpu_frame *frame) {
   if (!frame)

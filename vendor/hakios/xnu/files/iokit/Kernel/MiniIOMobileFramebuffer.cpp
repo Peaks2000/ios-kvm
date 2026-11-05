@@ -263,6 +263,7 @@ class IOMobileFramebuffer : public IOService
 public:
 	IOLock *        fLock;
 	struct ios_kvm_display_state fPresentation;
+	struct ios_kvm_surface_frame_key fPresentationKeys[SWAP_LAYERS];
 	uint8_t *       fBase;                  /* the boot framebuffer: the panel */
 	uint32_t        fPanelWidth, fPanelHeight, fRowBytes;
 	uint32_t        fWidth, fHeight;        /* the display as user space sees it */
@@ -284,6 +285,7 @@ public:
 	IOLock *        fSwapLock;              /* around the next five */
 	uint8_t         fSwap[SWAP_QUEUE][SWAP_SIZE];   /* the swaps on their way to the panel (fb_queue), from fSwapFirst on */
 	MiniIOSurface * fSwapSurfaces[SWAP_QUEUE][SWAP_LAYERS]; /* ... their surfaces, held from SwapEnd on: their maker may let go of them */
+	struct ios_kvm_surface_frame_key fSwapKeys[SWAP_QUEUE][SWAP_LAYERS];
 	unsigned        fSwapFirst, fSwapsWaiting;
 	/*
 	 * ... and not whenever the GPU happens to be done, but on a beat of the refresh rate
@@ -334,7 +336,7 @@ public:
 	void publishModes(void);
 	MiniIOSurface * defaultSurface(void);
 	void present(const uint8_t * swap);
-	void show(const uint8_t * swap, MiniIOSurface ** surfaces);
+	void show(const uint8_t * swap, MiniIOSurface ** surfaces, const struct ios_kvm_surface_frame_key * keys);
 	void presenter(void);
 	static void presenterMain(void * self, wait_result_t result);
 	void reportFrameTimes(void);
@@ -363,20 +365,28 @@ ios_kvm_display_state_sysctl SYSCTL_HANDLER_ARGS
 	if (fb == NULL) {
 		return ENXIO;
 	}
-	struct ios_kvm_display_state state;
+	struct ios_kvm_display_frame frame;
+	frame.version = IOS_KVM_DISPLAY_FRAME_VERSION;
+	frame.size = sizeof(frame);
 	IOLockLock(fb->fLock);
-	state = fb->fPresentation;
+	frame.presentation = fb->fPresentation;
+	memcpy(frame.keys, fb->fPresentationKeys, sizeof(frame.keys));
 	IOLockUnlock(fb->fLock);
-	if (state.sequence == 0) {
+	if (frame.presentation.sequence == 0) {
 		return EAGAIN;
 	}
-	return SYSCTL_OUT(req, &state, sizeof(state));
+	if (arg2) return SYSCTL_OUT(req, &frame, sizeof(frame));
+	return SYSCTL_OUT(req, &frame.presentation, sizeof(frame.presentation));
 }
 
 SYSCTL_PROC(_kern, OID_AUTO, ios_kvm_display_state,
     CTLTYPE_OPAQUE | CTLFLAG_RD | CTLFLAG_LOCKED, 0, 0,
     ios_kvm_display_state_sysctl, "S,ios_kvm_display_state",
     "Last completed primary-display presentation request");
+SYSCTL_PROC(_kern, OID_AUTO, ios_kvm_display_frame,
+    CTLTYPE_OPAQUE | CTLFLAG_RD | CTLFLAG_LOCKED, 0, 1,
+    ios_kvm_display_state_sysctl, "S,ios_kvm_display_frame",
+    "Completed display request and unchanged queued GPU generation keys");
 
 static void
 setNumber(OSDictionary * dict, const char * key, uint64_t value)
@@ -467,6 +477,7 @@ IOMobileFramebuffer::start(IOService * provider)
 	}
 	fLock = IOLockAlloc();
 	bzero(&fPresentation, sizeof(fPresentation));
+	bzero(fPresentationKeys, sizeof(fPresentationKeys));
 	fSwapLock = IOLockAlloc();
 	if (kernel_thread_start(&IOMobileFramebuffer::presenterMain, this, &thread) != KERN_SUCCESS) {
 		IOLog("MiniIOMobileFramebuffer: no thread to put frames on the panel with\n");
@@ -1020,6 +1031,7 @@ IOMobileFramebuffer::present(const uint8_t * swap)
 		uint32_t sid = swapWord(swap, SWAP_SURFACE(layer));
 
 		fSwapSurfaces[slot][layer] = sid != 0 ? MiniIOSurfaceCopy(sid) : NULL;
+		MiniIOSurfaceFrameKey(fSwapSurfaces[slot][layer], &fSwapKeys[slot][layer]);
 	}
 	fSwapsWaiting++;
 	IOLockWakeup(fSwapLock, fSwap, true);
@@ -1037,6 +1049,7 @@ IOMobileFramebuffer::presenter(void)
 {
 	static uint8_t swap[SWAP_SIZE];         /* (one thread) */
 	MiniIOSurface * surfaces[SWAP_LAYERS];
+	struct ios_kvm_surface_frame_key keys[SWAP_LAYERS];
 
 	for (;;) {
 		IOLockLock(fSwapLock);
@@ -1045,8 +1058,9 @@ IOMobileFramebuffer::presenter(void)
 		}
 		memcpy(swap, fSwap[fSwapFirst], SWAP_SIZE);
 		memcpy(surfaces, fSwapSurfaces[fSwapFirst], sizeof(surfaces));
+		memcpy(keys, fSwapKeys[fSwapFirst], sizeof(keys));
 		IOLockUnlock(fSwapLock);
-		show(swap, surfaces);
+		show(swap, surfaces, keys);
 		for (unsigned layer = 0; layer < SWAP_LAYERS; layer++) {
 			if (surfaces[layer] != NULL) {
 				MiniIOSurfaceDrop(surfaces[layer]);
@@ -1058,7 +1072,8 @@ IOMobileFramebuffer::presenter(void)
 
 /* A swap's surfaces onto the panel, once the GPU is done with them. */
 void
-IOMobileFramebuffer::show(const uint8_t * swap, MiniIOSurface ** surfaces)
+IOMobileFramebuffer::show(const uint8_t * swap, MiniIOSurface ** surfaces,
+    const struct ios_kvm_surface_frame_key * keys)
 {
 	uint32_t set = swapWord(swap, SWAP_LAYERS_SET);
 	uint64_t began = mach_absolute_time(), nanos, ready, shown, drawn;
@@ -1197,6 +1212,15 @@ IOMobileFramebuffer::show(const uint8_t * swap, MiniIOSurface ** surfaces)
 	fPresentation.row_bytes = fRowBytes;
 	for (unsigned layer = 0; layer < SWAP_LAYERS; layer++) {
 		struct ios_kvm_display_layer * state = &fPresentation.layers[layer];
+		struct ios_kvm_surface_frame_key current;
+		MiniIOSurfaceFrameKey(surfaces[layer], &current);
+		/* A later GPU generation or CPU write makes the queued snapshot
+		 * ineligible for direct presentation. Keep the CPU display fallback. */
+		if (memcmp(&current, keys + layer, sizeof(current)) == 0) {
+			fPresentationKeys[layer] = current;
+		} else {
+			bzero(&fPresentationKeys[layer], sizeof(current));
+		}
 		state->surface = swapWord(swap, SWAP_SURFACE(layer));
 		state->enabled = swapWord(swap, SWAP_ENABLED(layer));
 		memcpy(state->source, swap + SWAP_SOURCE(layer), sizeof(state->source));

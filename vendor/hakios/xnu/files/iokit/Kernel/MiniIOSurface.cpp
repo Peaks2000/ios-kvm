@@ -821,6 +821,7 @@ static MiniIOSurface *gHostPending[128];
 static uint32_t gHostPendingCount;
 static uint64_t gHostPendingBytes;
 static uint64_t gHostCompleted;
+static uint64_t gHostNextEpoch;
 SYSCTL_UINT(_kern, OID_AUTO, ios_kvm_pending_surfaces, CTLFLAG_RD | CTLFLAG_LOCKED,
     &gHostPendingCount, 0, "Retained asynchronous host surfaces");
 SYSCTL_QUAD(_kern, OID_AUTO, ios_kvm_pending_surface_bytes, CTLFLAG_RD | CTLFLAG_LOCKED,
@@ -831,6 +832,28 @@ SYSCTL_QUAD(_kern, OID_AUTO, ios_kvm_surface_completions, CTLFLAG_RD | CTLFLAG_L
 static minisurf_host_fence *hostFence(MiniIOSurface *s)
 {
     return s->hostFenceMemory ? (minisurf_host_fence *)s->hostFenceMemory->getBytesNoCopy() : NULL;
+}
+/* Caller holds gSurfaceLock and a surface reference. Report only a GPU writer
+ * whose matching unlock completed, with no subsequent reported CPU write. */
+static void hostFrameKeyLocked(MiniIOSurface *s, struct ios_kvm_surface_frame_key *key)
+{
+    bzero(key, sizeof(*key));
+    if (!s || !s->hostKeyReady || !s->hostEpoch || !s->hostIssued || !s->hostFenceMemory) return;
+    minisurf_host_fence *fence = hostFence(s);
+    if (os_atomic_load(&fence->sequence, acquire) == s->hostIssued && fence->status) return;
+    IOByteCount length = 0;
+    addr64_t physical = s->hostFenceMemory->getPhysicalSegment(0, &length);
+    if (!physical || length < sizeof(minisurf_host_fence) || (physical & 7)) return;
+    key->epoch = s->hostEpoch;
+    key->cell = physical;
+    key->sequence = s->hostIssued;
+}
+void MiniIOSurfaceFrameKey(MiniIOSurface *s, struct ios_kvm_surface_frame_key *key)
+{
+    if (!s) { bzero(key, sizeof(*key)); return; }
+    IOLockLock(gSurfaceLock);
+    hostFrameKeyLocked(s, key);
+    IOLockUnlock(gSurfaceLock);
 }
 static void hostFencePoll(thread_call_param_t unused0 __unused, thread_call_param_t unused1 __unused)
 {
@@ -1012,7 +1035,8 @@ class IOSurfaceRootUserClient : public IOUserClient
 
 	IOReturn methodInit(IOExternalMethodArguments * args);
 	IOReturn methodHostMemory(IOExternalMethodArguments * args, bool release);
-	IOReturn methodHostFence(IOExternalMethodArguments * args);
+	IOReturn methodHostFence(IOExternalMethodArguments * args, bool frameKey);
+	IOReturn methodHostFrameKey(IOExternalMethodArguments * args);
 	IOReturn methodCreate(IOExternalMethodArguments * args);
 	IOReturn methodLookup(IOExternalMethodArguments * args);
 	IOReturn methodLookupFromPort(IOExternalMethodArguments * args);
@@ -1028,7 +1052,7 @@ class IOSurfaceRootUserClient : public IOUserClient
 	IOReturn trapUnlock(void * p1, void * p2, void * p3, void * p4, void * p5, void * p6);
 	IOReturn trapDetach(void * p1, void * p2, void * p3, void * p4, void * p5, void * p6);
 	IOReturn trapRelease(void * p1, void * p2, void * p3, void * p4, void * p5, void * p6);
-	IOReturn lockCommon(uint32_t sid, uint32_t options, user_addr_t seedOut);
+	IOReturn lockCommon(uint32_t sid, uint32_t options, user_addr_t seedOut, bool unlocking);
 	IOReturn useCountCommon(uint32_t sid, uint32_t category, int delta);
 
 public:
@@ -1806,10 +1830,25 @@ IOSurfaceRootUserClient::methodHostMemory(IOExternalMethodArguments * args, bool
 /* 0x102: [surface ID, bytes] -> [completion physical address, sequence].
  * Require the existing, prepared owning-task pin to name exactly this kernel-
  * backed surface. Wrapped client allocations are deliberately unsupported. */
-IOReturn IOSurfaceRootUserClient::methodHostFence(IOExternalMethodArguments *args)
+static bool hostPinNamesSurface(IOMemoryDescriptor *pin, MiniIOSurface *s, uint64_t bytes)
+{
+    if (!pin || pin->getLength() != bytes || !s || s->client || !s->memory ||
+        !bytes || bytes > s->info.allocSize) return false;
+    uint64_t offset = (uint64_t)(s->pixels() - s->kbase), checked = 0;
+    if (offset > s->memory->getLength() || bytes > s->memory->getLength() - offset) return false;
+    while (checked < bytes) {
+        IOByteCount userLength = 0, kernelLength = 0;
+        addr64_t userPhysical = pin->getPhysicalSegment(checked, &userLength);
+        addr64_t kernelPhysical = s->memory->getPhysicalSegment(offset + checked, &kernelLength);
+        if (!userPhysical || userPhysical != kernelPhysical || !userLength || !kernelLength) return false;
+        checked += MIN(bytes - checked, MIN(userLength, kernelLength));
+    }
+    return true;
+}
+IOReturn IOSurfaceRootUserClient::methodHostFence(IOExternalMethodArguments *args, bool frameKey)
 {
     if (!gHostAsyncEnabled || !gHostFencePoll || fTask != current_task()) return kIOReturnUnsupported;
-    if (args->scalarInputCount != 2 || args->scalarOutputCount != 2 ||
+    if (args->scalarInputCount != 2 || args->scalarOutputCount != (frameKey ? 3 : 2) ||
         !args->scalarInput[1] || args->scalarInput[1] > (64u << 20)) return kIOReturnBadArgument;
     IOReturn result = kIOReturnBadArgument;
     IOLockLock(fHostLock);
@@ -1819,21 +1858,15 @@ IOReturn IOSurfaceRootUserClient::methodHostFence(IOExternalMethodArguments *arg
     IOLockLock(gSurfaceLock);
     uint64_t sid = args->scalarInput[0], bytes = args->scalarInput[1];
     MiniIOSurface *s = sid > 0 && sid < MINISURF_TABLE_SIZE ? gSurfaceTable[sid] : NULL;
-    if (!s || s->client || !s->memory || bytes > s->info.allocSize) goto out;
+    if (!hostPinNamesSurface(fHostMemory, s, bytes)) goto out;
     if (s->hostPending) { result = kIOReturnBusy; goto out; }
+    if (s->hostIssued == UINT32_MAX || (frameKey && !s->hostEpoch && gHostNextEpoch == UINT64_MAX)) {
+        result = kIOReturnNoResources; goto out;
+    }
     if (gHostPendingCount == 128 || s->info.allocSize > (64u << 20) - gHostPendingBytes) {
         result = kIOReturnNoResources; goto out;
     }
     {
-        uint64_t offset = (uint64_t)(s->pixels() - s->kbase), checked = 0;
-        if (offset > s->memory->getLength() || bytes > s->memory->getLength() - offset) goto out;
-        while (checked < bytes) {
-            IOByteCount userLength = 0, kernelLength = 0;
-            addr64_t userPhysical = fHostMemory->getPhysicalSegment(checked, &userLength);
-            addr64_t kernelPhysical = s->memory->getPhysicalSegment(offset + checked, &kernelLength);
-            if (!userPhysical || userPhysical != kernelPhysical || !userLength || !kernelLength) goto out;
-            checked += MIN(bytes - checked, MIN(userLength, kernelLength));
-        }
         if (!s->hostFenceMemory) {
             s->hostFenceMemory = IOBufferMemoryDescriptor::inTaskWithOptions(kernel_task, kIODirectionInOut, PAGE_SIZE, PAGE_SIZE);
             if (!s->hostFenceMemory) { result = kIOReturnNoMemory; goto out; }
@@ -1842,19 +1875,50 @@ IOReturn IOSurfaceRootUserClient::methodHostFence(IOExternalMethodArguments *arg
         IOByteCount length = 0;
         addr64_t physical = s->hostFenceMemory->getPhysicalSegment(0, &length);
         if (!physical || length < sizeof(minisurf_host_fence) || (physical & 7)) goto out;
-        if (++s->hostIssued == 0) ++s->hostIssued;
+        if (frameKey && !s->hostEpoch) s->hostEpoch = ++gHostNextEpoch;
+        s->hostIssued++;
+        s->hostWriteSeed = s->shared()->seed;
+        s->hostIssuerTask = fTask;
+        s->hostKeyArmed = frameKey;
+        s->hostKeyReady = false;
         hostFence(s)->status = 0;
         s->hostPending = true;
         surfaceHold(s);
         for (unsigned i = 0; i < 128; i++) if (!gHostPending[i]) { gHostPending[i] = s; break; }
         gHostPendingCount++; gHostPendingBytes += s->info.allocSize;
         args->scalarOutput[0] = physical; args->scalarOutput[1] = s->hostIssued;
+        if (frameKey) args->scalarOutput[2] = s->hostEpoch;
         uint64_t deadline;
         clock_interval_to_deadline(1, kMillisecondScale, &deadline);
         thread_call_enter_delayed(gHostFencePoll, deadline);
         result = kIOReturnSuccess;
     }
 out:
+    IOLockUnlock(gSurfaceLock);
+    IOLockUnlock(fHostLock);
+    return result;
+}
+
+/* 0x104 reads eligibility through the caller's existing exact surface pin.
+ * This creates no GPU hold and never returns metadata for unrelated storage. */
+IOReturn IOSurfaceRootUserClient::methodHostFrameKey(IOExternalMethodArguments *args)
+{
+    if (!gHostAsyncEnabled || fTask != current_task()) return kIOReturnUnsupported;
+    if (args->scalarInputCount != 2 || args->scalarOutputCount != 3 ||
+        !args->scalarInput[1] || args->scalarInput[1] > (64u << 20)) return kIOReturnBadArgument;
+    IOReturn result = kIOReturnBadArgument;
+    IOLockLock(fHostLock);
+    IOLockLock(gSurfaceLock);
+    uint64_t sid = args->scalarInput[0];
+    MiniIOSurface *s = sid > 0 && sid < MINISURF_TABLE_SIZE ? gSurfaceTable[sid] : NULL;
+    if (hostPinNamesSurface(fHostMemory, s, args->scalarInput[1])) {
+        struct ios_kvm_surface_frame_key key;
+        hostFrameKeyLocked(s, &key);
+        args->scalarOutput[0] = key.epoch;
+        args->scalarOutput[1] = key.cell;
+        args->scalarOutput[2] = key.sequence;
+        result = kIOReturnSuccess;
+    }
     IOLockUnlock(gSurfaceLock);
     IOLockUnlock(fHostLock);
     return result;
@@ -1876,7 +1940,11 @@ IOSurfaceRootUserClient::externalMethod(uint32_t selector, IOExternalMethodArgum
 	case 0x101:
 		return methodHostMemory(args, true);
 	case 0x102:
-		return methodHostFence(args);
+		return methodHostFence(args, false);
+	case 0x103:
+		return methodHostFence(args, true);
+	case 0x104:
+		return methodHostFrameKey(args);
 	case kSurfaceMethodInit:
 		return methodInit(args);
 	case kSurfaceMethodCreate:
@@ -2037,7 +2105,7 @@ IOSurfaceRootUserClient::trapDecrementUseCount(void * p1, void * p2, void * p3, 
  * What matters is the seed, which tells readers that the pixels may have changed.
  */
 IOReturn
-IOSurfaceRootUserClient::lockCommon(uint32_t sid, uint32_t options, user_addr_t seedOut)
+IOSurfaceRootUserClient::lockCommon(uint32_t sid, uint32_t options, user_addr_t seedOut, bool unlocking)
 {
 	struct minisurf_client_ref * ref;
 	uint32_t seed = 0;
@@ -2048,6 +2116,10 @@ IOSurfaceRootUserClient::lockCommon(uint32_t sid, uint32_t options, user_addr_t 
 		struct minisurf_shared * sh = ref->surface->shared();
 
 		if (!(options & kSurfaceLockReadOnly)) {
+			MiniIOSurface *s = ref->surface;
+			s->hostKeyReady = unlocking && s->hostKeyArmed && s->hostIssuerTask == fTask &&
+			    s->hostWriteSeed == sh->seed;
+			s->hostKeyArmed = false;
 			sh->seed++;
 		}
 		seed = sh->seed;
@@ -2076,13 +2148,13 @@ IOSurfaceRootUserClient::trapLock(void * p1, void * p2, void * p3, void * p4, vo
         MiniIOSurfaceDrop(surface);
         if (result != kIOReturnSuccess) return result;
     }
-	return lockCommon((uint32_t) (uintptr_t) p1, (uint32_t) (uintptr_t) p2, (user_addr_t) (uintptr_t) p3);
+	return lockCommon((uint32_t) (uintptr_t) p1, (uint32_t) (uintptr_t) p2, (user_addr_t) (uintptr_t) p3, false);
 }
 
 IOReturn
 IOSurfaceRootUserClient::trapUnlock(void * p1, void * p2, void * p3, void * p4, void * p5, void * p6)
 {
-	return lockCommon((uint32_t) (uintptr_t) p1, (uint32_t) (uintptr_t) p2, (user_addr_t) (uintptr_t) p3);
+	return lockCommon((uint32_t) (uintptr_t) p1, (uint32_t) (uintptr_t) p2, (user_addr_t) (uintptr_t) p3, true);
 }
 
 /*

@@ -23,6 +23,7 @@ p.add_argument('--eagl-check-every-call', action='store_true', help='Enable nati
 p.add_argument('--guest-uid', type=int, choices=(0, 501), default=0, help='Run temporary diagnostics as root or the compositor mobile identity')
 p.add_argument('--shared-ram', action='store_true', help='Opt into retained IOSurface readback through this VM RAM')
 p.add_argument('--gpu-snapshots', action='store_true', help='Also retain bounded GPU images for presentation research')
+p.add_argument('--require-frame-key', action='store_true', help='Require kernel generation keys and CPU-write revocation checks')
 p.add_argument('--async-readback', action='store_true', help='Submit retained surface writes without waiting for their RPC reply')
 p.add_argument('--benchmark-async-readback', action='store_true', help='Compare synchronous/asynchronous retained writes including CPU completion')
 p.add_argument('--benchmark', action='store_true', help='Measure copied/shared readback ABBA at two phone resolutions')
@@ -41,6 +42,8 @@ if a.async_readback and not a.shared_ram:
     p.error('--async-readback requires --shared-ram')
 if a.gpu_snapshots and not a.shared_ram:
     p.error('--gpu-snapshots requires --shared-ram')
+if a.require_frame_key and not a.shared_ram:
+    p.error('--require-frame-key requires --shared-ram')
 if a.benchmark and not a.shared_ram:
     p.error('--benchmark requires --shared-ram')
 if not 1024 <= a.port <= 65535:
@@ -90,6 +93,7 @@ receipt['vertex_state_benchmark_requested'] = a.benchmark_vertex_state
 receipt['async_readback_requested'] = a.async_readback
 receipt['async_readback_benchmark_requested'] = a.benchmark_async_readback
 receipt['gpu_snapshots_requested'] = a.gpu_snapshots
+receipt['frame_keys_required'] = a.require_frame_key
 error = None
 with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local') as directory, \
         (a.output / 'server.log').open('w') as server_log, \
@@ -154,6 +158,7 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
                    f'IOS_KVM_NATIVE_SHARED={int(a.shared_ram)} IOS_KVM_NATIVE_BENCH={int(a.benchmark)} '
                    f'IOS_KVM_NATIVE_BENCH_PIXEL_STATE={int(a.benchmark_pixel_state)} '
                    f'IOS_KVM_NATIVE_ASYNC_READBACK={int(a.async_readback)} '
+                   f'IOS_KVM_NATIVE_REQUIRE_FRAME_KEY={int(a.require_frame_key)} '
                    f'IOS_KVM_NATIVE_BENCH_ASYNC_READBACK={int(a.benchmark_async_readback)} '
                    f'IOS_KVM_NATIVE_BENCH_VERTEX_STATE={int(a.benchmark_vertex_state)} '
                    f'IOS_KVM_NATIVE_GL_CHECK_EVERY_CALL={int(a.eagl_check_every_call)}; '
@@ -164,6 +169,13 @@ with tempfile.TemporaryDirectory(prefix='native-gl-check-', dir=root / '.local')
         (a.output / 'guest.log').write_text(output)
         if result.returncode or 'Native GL general API check PASSED' not in output:
             raise RuntimeError('guest correctness check failed; inspect guest.log')
+        if a.require_frame_key:
+            keys = [tuple(map(int, item)) for item in re.findall(
+                r'Native surface frame key PASSED \(epoch=(\d+), sequence=(\d+), CPU-write revocation\)', output)]
+            if len(keys) != 3 or len({epoch for epoch, sequence in keys}) != 3:
+                raise RuntimeError('Three independent surface generation checks did not finish')
+            receipt['frame_key_checks'] = [{'epoch': epoch, 'last_sequence': sequence}
+                                           for epoch, sequence in keys]
         for marker in ('Native client vertices PASSED','Native debug labels PASSED'):
             if marker not in output:
                 raise RuntimeError('guest coverage did not finish: '+marker)

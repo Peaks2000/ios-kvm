@@ -125,8 +125,8 @@ int main(int argc, char **argv) {
     glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
     require(glGetError() == GL_NO_ERROR, "software fallback readback");
   }
-  require(ng_gpu_frame_capture(0, 0, width, height, 0x1000, 1), "capture GPU image");
-  struct ng_gpu_frame *frame = ng_gpu_frame_acquire(ng_gpu_owner, 0x1000, 1);
+  require(ng_gpu_frame_capture(0, 0, width, height, 0x1000, 1, 42), "capture GPU image");
+  struct ng_gpu_frame *frame = ng_gpu_frame_acquire(ng_gpu_owner, 0x1000, 1, 42);
   require(frame != NULL, "hold GPU frame lease");
   struct ng_gpu_dmabuf buffer;
   enum ng_dma_result status;

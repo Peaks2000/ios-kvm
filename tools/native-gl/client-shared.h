@@ -11,6 +11,7 @@ struct ng_pin {
 static _Thread_local struct ng_pin *ng_active_pin;
 static _Atomic uint64_t ng_shared_submissions;
 static _Atomic uint64_t ng_shared_async_submissions;
+static _Atomic int ng_fence_selector = 0x103;
 uint64_t ios_kvm_native_gl_shared_submissions(void) {
   return atomic_load(&ng_shared_submissions);
 }
@@ -71,6 +72,28 @@ void ios_kvm_native_gl_readback_surface(void *lease, uint32_t surface) {
   if (lease)
     ((struct ng_pin *)lease)->surface = surface;
 }
+int ios_kvm_native_gl_readback_key(void *lease, struct ios_kvm_surface_frame_key *key) {
+  if (!key)
+    return 0;
+  memset(key, 0, sizeof(*key));
+  struct ng_pin *p = lease;
+  if (!p || !p->surface || atomic_load(&ng_fence_selector) == 0x102)
+    return 0;
+  uint64_t input[] = {p->surface, p->bytes}, output[3] = {0};
+  uint32_t count = 3;
+  if (IOConnectCallScalarMethod(p->connection, 0x104, input, 2, output, &count))
+    return 0;
+  if (count != 3 || (output[1] & 7) || output[2] > UINT32_MAX)
+    ng_failure("invalid surface frame key");
+  if (!output[0] && !output[1] && !output[2])
+    return 0;
+  if (!output[0] || !output[1] || !output[2])
+    ng_failure("incomplete surface frame key");
+  key->epoch = output[0];
+  key->cell = output[1];
+  key->sequence = output[2];
+  return 1;
+}
 static int ng_shared_try_read(GLint x, GLint y, GLsizei w, GLsizei h,
                               GLenum format, GLenum type, void *destination) {
   struct ng_pin *p = ng_active_pin;
@@ -86,31 +109,41 @@ static int ng_shared_try_read(GLint x, GLint y, GLsizei w, GLsizei h,
   if (skip || stride < (size_t)w * 4 || stride > (64u << 20) || (stride & 3) ||
       stride * (size_t)(h - 1) + (size_t)w * 4 != p->bytes)
     return 0;
-  size_t length = 11 * 8 + (size_t)p->count * 16;
+  size_t length = 12 * 8 + (size_t)p->count * 16;
   uint8_t *request = malloc(length);
   if (!request)
     return 0;
-  uint64_t a[11] = {
+  uint64_t a[12] = {
       (uint64_t)x, (uint64_t)y, (uint64_t)w, (uint64_t)h, format, type,
-      stride,      p->bytes,    p->count,    0,           0};
+      stride,      p->bytes,    p->count,    0,           0, 0};
   memcpy(request, a, sizeof(a));
   memcpy(request + sizeof(a), p->segments, (size_t)p->count * 16);
-  uint64_t input[] = {p->surface, p->bytes}, out[2] = {0};
-  uint32_t count = 2;
+  uint64_t input[] = {p->surface, p->bytes}, out[3] = {0};
+  int selector = atomic_load(&ng_fence_selector);
+  uint32_t count = selector == 0x103 ? 3 : 2;
   kern_return_t status =
-      IOConnectCallScalarMethod(p->connection, 0x102, input, 2, out, &count);
+      IOConnectCallScalarMethod(p->connection, selector, input, 2, out, &count);
+  if (selector == 0x103 && status == kIOReturnUnsupported) {
+    atomic_store(&ng_fence_selector, 0x102);
+    selector = 0x102;
+    count = 2;
+    status = IOConnectCallScalarMethod(p->connection, selector, input, 2, out, &count);
+  }
   if (status) {
     free(request);
     return 0;
   } /* Fallback is allowed only before a hold exists. */
-  if (count != 2 || !out[0] || (out[0] & 7) || !out[1] || out[1] > UINT32_MAX)
+  if (count != (selector == 0x103 ? 3u : 2u) || !out[0] || (out[0] & 7) ||
+      !out[1] || out[1] > UINT32_MAX || (selector == 0x103 && !out[2]))
     ng_failure("invalid retained-surface completion");
   a[9] = out[0];
   a[10] = out[1];
+  a[11] = out[2];
   const char *trace = getenv("IOS_KVM_NATIVE_TRACE_ERRORS");
   if (trace && !strcmp(trace, "1") && p->traced_completion != out[0]) {
-    fprintf(stderr, "native retained surface pid=%d surface=%u cell=%#llx\n",
-            getpid(), p->surface, (unsigned long long)out[0]);
+    fprintf(stderr, "native retained surface pid=%d surface=%u cell=%#llx epoch=%llu\n",
+            getpid(), p->surface, (unsigned long long)out[0],
+            (unsigned long long)out[2]);
     p->traced_completion = out[0];
   }
   memcpy(request, a, sizeof(a));

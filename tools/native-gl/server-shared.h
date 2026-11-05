@@ -63,9 +63,9 @@ static int ng_segment_compare(const void *left, const void *right) {
 }
 static int ng_shared_read(const uint8_t *data, size_t size, void *output,
                           size_t capacity, size_t *used) {
-  if (size < 11 * 8 || *used)
+  if (size < 12 * 8 || *used)
     return -1;
-  uint64_t a[11];
+  uint64_t a[12];
   memcpy(a, data, sizeof(a));
   uint64_t completion = a[9], sequence = a[10];
   if (!sequence || sequence > UINT32_MAX || (completion & 7) ||
@@ -130,7 +130,7 @@ static int ng_shared_read(const uint8_t *data, size_t size, void *output,
     goto complete;
   }
   ng_gpu_frame_capture((GLint)a[0], (GLint)a[1], a[2], a[3], completion,
-                        (uint32_t)sequence);
+                        (uint32_t)sequence, a[11]);
   ng_trace_pixels(a[2], a[3], pixels, completion, sequence);
   if (a[4] == NG_BGRA)
     ng_swap_rb(pixels, pixels, tight);

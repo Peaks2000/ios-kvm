@@ -1,0 +1,204 @@
+{
+  "date": "2026-11-05",
+  "scope": "Kernel surface-lifetime epochs, completed display generation identity, retained readback compatibility and GPU cache selection.",
+  "wire_version": 10,
+  "tested_kernel_sha256": "5c540e9ca1a9ef42294574acbe9460ef0301f67ed881609d2057eaf2ff678028",
+  "legacy_kernel_sha256": "d29ef601948fcd420918754a65daff1a19e686a8071bad8893a51a504e86e574",
+  "display_abi": {
+    "frame_bytes": 312,
+    "legacy_bytes": 208,
+    "write_result": -1,
+    "write_errno": 1
+  },
+  "vm_checks": [
+    {
+      "actual_renderer": "NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2",
+      "frame_keys_required": true,
+      "async_readback_requested": true,
+      "guest_uid_requested": 501,
+      "eagl_macro_passed": true,
+      "context_race_passed": true,
+      "gpu_snapshots_captured": 32,
+      "gpu_snapshot_cleanup_passed": true,
+      "passed": true,
+      "hashes": {
+        "libios-kvm-native-gl.dylib": "f1cbe9374f3ca01cfc58ee5a2604a9d3817a2633f79d1e9ddf1417c28f2cb64c",
+        "guest-check": "b8e8e981174168c799c8388755a1bfd49237ae96ce10e8994e1e08f7cc7edfb5",
+        "context-race-check": "fb48293f2e51482529cde3c740c17d0710d9294d57b8f67dce15afeaafb025c9",
+        "server": "37e5fa5450f5c9299c814c5f2854b62856dca3393b471018ff80884a2ae53e91",
+        "guest-exec": "f76d6d471a68a36c8e92d1e3efd6760b1c075789a2e87e857b5a3c2999585d0c",
+        "eagl-check": "a2d403261cce0353c83a90d53e4c7c227ba23f7c99107a9613c2d142c2fafb0c",
+        "eagl-coverage/libhakios-native-eagl.dylib": "83db27f8dc503d20a385878a532ea1f8395a3e4d17fcdd64c81c2594357bc5f1"
+      },
+      "frame_key_checks": [
+        {
+          "epoch": 1,
+          "last_sequence": 12
+        },
+        {
+          "epoch": 3,
+          "last_sequence": 2
+        },
+        {
+          "epoch": 5,
+          "last_sequence": 2
+        }
+      ]
+    },
+    {
+      "actual_renderer": "llvmpipe (LLVM 22.1.8, 256 bits)",
+      "frame_keys_required": true,
+      "async_readback_requested": true,
+      "guest_uid_requested": 501,
+      "eagl_macro_passed": true,
+      "context_race_passed": true,
+      "gpu_snapshots_captured": 32,
+      "gpu_snapshot_cleanup_passed": true,
+      "passed": true,
+      "hashes": {
+        "libios-kvm-native-gl.dylib": "f1cbe9374f3ca01cfc58ee5a2604a9d3817a2633f79d1e9ddf1417c28f2cb64c",
+        "guest-check": "b8e8e981174168c799c8388755a1bfd49237ae96ce10e8994e1e08f7cc7edfb5",
+        "context-race-check": "fb48293f2e51482529cde3c740c17d0710d9294d57b8f67dce15afeaafb025c9",
+        "server": "37e5fa5450f5c9299c814c5f2854b62856dca3393b471018ff80884a2ae53e91",
+        "guest-exec": "f76d6d471a68a36c8e92d1e3efd6760b1c075789a2e87e857b5a3c2999585d0c",
+        "eagl-check": "a2d403261cce0353c83a90d53e4c7c227ba23f7c99107a9613c2d142c2fafb0c",
+        "eagl-coverage/libhakios-native-eagl.dylib": "83db27f8dc503d20a385878a532ea1f8395a3e4d17fcdd64c81c2594357bc5f1"
+      },
+      "frame_key_checks": [
+        {
+          "epoch": 9,
+          "last_sequence": 12
+        },
+        {
+          "epoch": 11,
+          "last_sequence": 2
+        },
+        {
+          "epoch": 13,
+          "last_sequence": 2
+        }
+      ]
+    },
+    {
+      "actual_renderer": "NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2",
+      "frame_keys_required": false,
+      "async_readback_requested": true,
+      "guest_uid_requested": 501,
+      "eagl_macro_passed": true,
+      "context_race_passed": true,
+      "gpu_snapshots_captured": 32,
+      "gpu_snapshot_cleanup_passed": true,
+      "passed": true,
+      "hashes": {
+        "libios-kvm-native-gl.dylib": "f1cbe9374f3ca01cfc58ee5a2604a9d3817a2633f79d1e9ddf1417c28f2cb64c",
+        "guest-check": "598ec83608705f6d339bfecc8a667bf5252f5dfa9b290ff95c8dedfd8e881838",
+        "context-race-check": "fb48293f2e51482529cde3c740c17d0710d9294d57b8f67dce15afeaafb025c9",
+        "server": "37e5fa5450f5c9299c814c5f2854b62856dca3393b471018ff80884a2ae53e91",
+        "guest-exec": "f76d6d471a68a36c8e92d1e3efd6760b1c075789a2e87e857b5a3c2999585d0c",
+        "eagl-check": "a2d403261cce0353c83a90d53e4c7c227ba23f7c99107a9613c2d142c2fafb0c",
+        "eagl-coverage/libhakios-native-eagl.dylib": "83db27f8dc503d20a385878a532ea1f8395a3e4d17fcdd64c81c2594357bc5f1"
+      },
+      "frame_key_checks": []
+    }
+  ],
+  "host_sanitizers": [
+    "address",
+    "undefined"
+  ],
+  "driver_leak_detection": false,
+  "host_checks": [
+    {
+      "check": "dmabuf",
+      "passed": true,
+      "log_sha256": "0edb41b3c715c6fcb2ebd1c40a566aa06f69cf6740fe545c6a7dcd7eb6150b56"
+    },
+    {
+      "check": "nvidia",
+      "passed": true,
+      "log_sha256": "bed0fc9178c81c55e4dd38b44c60efb5a0547c7c406a80d9e936f5264d50c5a1"
+    },
+    {
+      "check": "software",
+      "passed": true,
+      "log_sha256": "5f42c0657fdae3ae4191bd06383f217cf846ef8327de5a7c52d5eb377b50afd8"
+    },
+    {
+      "check": "window-nvidia-normal-retry",
+      "passed": true,
+      "log_sha256": "aae6c60754fb258af898122cb9e05d3a45dea44d9e59a48a37f08bc831c1651a"
+    },
+    {
+      "check": "window-nvidia-large-retry",
+      "passed": true,
+      "log_sha256": "aae6c60754fb258af898122cb9e05d3a45dea44d9e59a48a37f08bc831c1651a"
+    },
+    {
+      "check": "window-software-normal-retry",
+      "passed": true,
+      "log_sha256": "43c8ce4434471f74913dfd8d6ed3db95ea3a13c15507cda1da67d4956080be5a"
+    },
+    {
+      "check": "window-software-large-retry",
+      "passed": true,
+      "log_sha256": "43c8ce4434471f74913dfd8d6ed3db95ea3a13c15507cda1da67d4956080be5a"
+    }
+  ],
+  "desktop_key_join": {
+    "scope": "Completed display keys joined to captured GPU-frame records. Cache residence and pixels are separate checks.",
+    "trial_returncode": 0,
+    "samples": 8,
+    "eligible_keys": 4,
+    "matching_keys": 4,
+    "passed": true,
+    "unique_matching_keys": 4,
+    "logged_captures": 578
+  },
+  "desktop_cleanup": {
+    "server_stopped": true,
+    "guest_temp_removed": true,
+    "pending_surfaces_after": 0,
+    "gpu_snapshot_cleanup_passed": true,
+    "hashes": {
+      "server": "1a876bcc45f96949a3e00197a3198a9ec87c35aa0a9e54895b9012f2b4767990",
+      "proxy": "f1cbe9374f3ca01cfc58ee5a2604a9d3817a2633f79d1e9ddf1417c28f2cb64c",
+      "bridge": "83db27f8dc503d20a385878a532ea1f8395a3e4d17fcdd64c81c2594357bc5f1",
+      "injection": "29e3ddb3081d6c0f217c351ec067836867e71e103b74d394f5c5f46451396cb3"
+    }
+  },
+  "process_exit": {
+    "scope": "Native retained readback across temporary guest process exit; not desktop or performance",
+    "sanitized": true,
+    "async_readback": true,
+    "gpu_snapshots_requested": true,
+    "submission_returned_while_host_paused": true,
+    "producer_confirmed_dead": true,
+    "observer_found_pending_surface": true,
+    "gpu_snapshots_captured": 1,
+    "gpu_snapshot_cleanup_passed": true,
+    "passed": true,
+    "hashes": {
+      "libios-kvm-native-gl.dylib": "f1cbe9374f3ca01cfc58ee5a2604a9d3817a2633f79d1e9ddf1417c28f2cb64c",
+      "exit-check": "79afaaad10e329b9e524a0d61cc62639bb7509a34af8f3007283731a189caf2a",
+      "host": "5ede9c356ff2f716099eb369f42e801ad51d5bb12cfa662c9f9f79a0958ecaeb"
+    },
+    "guest_temp_removed": true,
+    "server_stopped": true
+  },
+  "excluded_attempts": [
+    {
+      "check": "first final-kernel display-key collection",
+      "reason": "Temporary guest helper was absent after the compatibility reboot. No samples collected. The trial restored cleanly. Successful rerun above followed helper deployment."
+    },
+    {
+      "check": "first window launch in this checkpoint",
+      "reason": "An invalid local SDL EGL-library override prevented initialization. Retried without that override. All four window checks above passed."
+    }
+  ],
+  "limits": [
+    "Keys track reported IOSurface CPU writes. Raw accesses outside the lock API are outside the guarantee.",
+    "Display-record matching does not establish cache residence, pixel format or captured extent equivalence.",
+    "Live iOS host-window presentation and lazy CPU/GPU coherence remain unfinished.",
+    "CPU readbacks and guest panel copies remain. Desktop speed gains are unmeasured.",
+    "Physical Intel/AMD testing, Metal and near-native CPU execution remain unverified."
+  ]
+}

@@ -87,10 +87,10 @@ with tempfile.TemporaryDirectory(prefix='native-gl-shared-host-') as directory:
                 ram[:] = b'\xa5' * len(ram)
                 ram[64:72] = bytes(8)
                 seq = 37
-                args = [0, 0, width, 1, fmt, dtype, stride, span, len(segments), completion, seq]
+                args = [0, 0, width, 1, fmt, dtype, stride, span, len(segments), completion, seq, 42]
                 commands = scalar('glClearColor', floatbits(1), 0, 0, floatbits(1))
                 commands += scalar('glClear', 0x4000)
-                commands += record(0x10021, struct.pack('<11Q', *args) +
+                commands += record(0x10021, struct.pack('<12Q', *args) +
                                    b''.join(struct.pack('<QQ', *item) for item in segments))
                 with connect() as s:
                     capacity = 4 | (0x80000000 if asynchronous else 0)

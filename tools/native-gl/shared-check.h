@@ -71,6 +71,8 @@ static void shared_surface_size_check(unsigned w, unsigned h, unsigned row,
   require(lease != NULL, "explicit surface pin");
   uint64_t before = ios_kvm_native_gl_shared_submissions();
   uint64_t async_before = ios_kvm_native_gl_async_submissions();
+  struct ios_kvm_surface_frame_key previous_key = {0};
+  const char *require_key = getenv("IOS_KVM_NATIVE_REQUIRE_FRAME_KEY");
   for (unsigned frame = 0; frame < frames; frame++) {
     require(IOSurfaceLock(surface, 0, NULL) == 0, "surface writer lock");
     glUniform1f(phase, (frame + 1) / 16.0f);
@@ -89,6 +91,18 @@ static void shared_surface_size_check(unsigned w, unsigned h, unsigned row,
     IOSurfaceUnlock(surface, 0, NULL);
     require(IOSurfaceLock(surface, kIOSurfaceLockReadOnly, NULL) == 0,
             "completed surface CPU lock");
+    struct ios_kvm_surface_frame_key key;
+    int eligible = ios_kvm_native_gl_readback_key(lease, &key);
+    if (require_key && !strcmp(require_key, "1"))
+      require(eligible, "new kernel GPU generation key is eligible after writer unlock");
+    if (eligible) {
+      require(key.epoch && key.cell && key.sequence && !key.reserved,
+              "complete GPU generation key");
+      if (previous_key.epoch)
+        require(key.epoch == previous_key.epoch && key.cell == previous_key.cell &&
+                key.sequence > previous_key.sequence, "stable surface epoch and advancing submission");
+      previous_key = key;
+    }
     for (unsigned y = 0; y < h; y++)
       for (unsigned x = 0; x < row; x++) {
         uint8_t value = pixels[(size_t)y * row + x];
@@ -115,6 +129,17 @@ static void shared_surface_size_check(unsigned w, unsigned h, unsigned row,
   require(ios_kvm_native_gl_async_submissions() - async_before ==
               (asynchronous ? submitted : 0),
           "actual synchronous/asynchronous retained submission mode");
+  if (previous_key.epoch) {
+    struct ios_kvm_surface_frame_key key;
+    require(ios_kvm_native_gl_readback_key(lease, &key), "reader unlock preserves GPU key");
+    require(IOSurfaceLock(surface, 0, NULL) == 0, "CPU writer key invalidation lock");
+    require(!ios_kvm_native_gl_readback_key(lease, &key), "CPU writer lock revokes GPU key");
+    pixels[0] ^= 1;
+    IOSurfaceUnlock(surface, 0, NULL);
+    require(!ios_kvm_native_gl_readback_key(lease, &key), "CPU writer unlock keeps GPU key revoked");
+    printf("Native surface frame key PASSED (epoch=%llu, sequence=%u, CPU-write revocation)\n",
+           (unsigned long long)previous_key.epoch, previous_key.sequence);
+  }
   /* An active but untagged lease must still use ordinary synchronous readback.
    */
   ios_kvm_native_gl_readback_surface(lease, 0);
@@ -146,9 +171,11 @@ static void shared_surface_size_check(unsigned w, unsigned h, unsigned row,
   GLuint incomplete;
   glGenFramebuffers(1, &incomplete);
   glBindFramebuffer(GL_FRAMEBUFFER, incomplete);
+  require(IOSurfaceLock(error_surface, 0, NULL) == 0, "error surface GPU writer lock");
   old = ios_kvm_native_gl_readback_set(lease);
   glReadPixels(0, 0, w, h, NG_BGRA, GL_UNSIGNED_BYTE, error_pixels);
   ios_kvm_native_gl_readback_set(old);
+  IOSurfaceUnlock(error_surface, 0, NULL);
   require(ios_kvm_native_gl_shared_submissions() - before == submitted + 1,
           "failed read retains and completes kernel hold");
   require(glGetError() == GL_INVALID_FRAMEBUFFER_OPERATION,
@@ -158,6 +185,9 @@ static void shared_surface_size_check(unsigned w, unsigned h, unsigned row,
     require(error_pixels[i] == 0xa5, "GPU error leaves destination unchanged");
   require(IOSurfaceLock(error_surface, kIOSurfaceLockReadOnly, NULL) != 0,
           "kernel observes shared error completion");
+  struct ios_kvm_surface_frame_key failed_key;
+  require(!ios_kvm_native_gl_readback_key(lease, &failed_key),
+          "failed GPU writes cannot supply an eligible frame key");
   ios_kvm_native_gl_readback_release(lease);
   CFRelease(error_surface);
   glDeleteFramebuffers(1, &incomplete);

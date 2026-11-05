@@ -13,6 +13,7 @@
 #include <IOKit/IOBufferMemoryDescriptor.h>
 
 #include "MiniDrivers.h"
+#include "MiniIOSurfaceFrame.h"
 
 #define MINISURF_MAX_PLANES     4
 #define MINISURF_RESULT_MAX     0xa68           /* what IOSurface.framework reserves for a result */
@@ -119,6 +120,10 @@ public:
 	uint8_t *                       kpixels;        /* where the pixel memory starts in the kernel, either way */
 	IOBufferMemoryDescriptor *      hostFenceMemory; /* kernel-only host completion page */
 	uint32_t                        hostIssued;
+	uint64_t                        hostEpoch;
+	task_t                          hostIssuerTask; /* compared only while the GPU writer is armed */
+	uint32_t                        hostWriteSeed;
+	bool                            hostKeyArmed, hostKeyReady;
 	bool                            hostPending;
 	uint32_t                        drawn;          /* the GPU's last submission that names the pixels (0: none; hakios.gpu.cpp) */
 	struct minisurf_result          info;           /* addresses not filled in */
@@ -133,6 +138,10 @@ public:
 	{
 		hostFenceMemory = NULL;
 		hostIssued = 0;
+		hostEpoch = 0;
+		hostIssuerTask = NULL;
+		hostWriteSeed = 0;
+		hostKeyArmed = hostKeyReady = false;
 		hostPending = false;
 		return OSObject::init();
 	}
@@ -171,6 +180,7 @@ void            MiniIOSurfaceCost(uint32_t * made, uint64_t * making, uint32_t *
 void            MiniIOSurfaceClearKept(void);
 /* Wait, for so many milliseconds at most, until the GPU is done with a surface's pixels (hakios.gpu.cpp). */
 IOReturn        MiniIOSurfaceHostWait(MiniIOSurface * surface, uint64_t milliseconds, bool avoidSync);
+void            MiniIOSurfaceFrameKey(MiniIOSurface * surface, struct ios_kvm_surface_frame_key * key);
 bool            MiniIOSurfaceDrawn(MiniIOSurface * surface, uint64_t milliseconds);
 MiniIOSurface * MiniIOSurfaceCreateSimple(uint32_t width, uint32_t height, uint32_t pixelFormat);
 void            MiniIOSurfaceDrop(MiniIOSurface * surface);
