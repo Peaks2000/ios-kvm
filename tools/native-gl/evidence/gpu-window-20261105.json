@@ -1,0 +1,336 @@
+{
+  "date": "2026-11-05",
+  "scope": "Synthetic host-frame transfer into an independent native-window EGL display.",
+  "sanitizers": [
+    "address",
+    "undefined"
+  ],
+  "driver_leak_detection": false,
+  "validation": {
+    "scope": "Native EGL-display image transfer and resized-window correctness",
+    "runs": [
+      {
+        "mode": "auto",
+        "fixture": "frames",
+        "renderer": "NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2",
+        "passed": true,
+        "log_sha256": "e05413c34820698ffecd8026d4dfca38f8ac50594545846d07be27c60ff80f13"
+      },
+      {
+        "mode": "auto",
+        "fixture": "window",
+        "renderer": "NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2",
+        "passed": true,
+        "log_sha256": "aae6c60754fb258af898122cb9e05d3a45dea44d9e59a48a37f08bc831c1651a"
+      },
+      {
+        "mode": "auto",
+        "fixture": "window-large",
+        "renderer": "NVIDIA GeForce RTX 4060 Laptop GPU/PCIe/SSE2",
+        "passed": true,
+        "log_sha256": "aae6c60754fb258af898122cb9e05d3a45dea44d9e59a48a37f08bc831c1651a"
+      },
+      {
+        "mode": "software",
+        "fixture": "frames",
+        "renderer": "llvmpipe (LLVM 22.1.8, 256 bits)",
+        "passed": true,
+        "log_sha256": "d1a0df0f68f7f4adf57566407451e2d8be6a218a1234681935622083cfac91e0"
+      },
+      {
+        "mode": "software",
+        "fixture": "window",
+        "renderer": "llvmpipe (LLVM 22.1.8, 256 bits)",
+        "passed": true,
+        "log_sha256": "123c01141c60140efc1c06ddc4276da22cf720460bc9ce9a8d47f97e2832ada3"
+      },
+      {
+        "mode": "software",
+        "fixture": "window-large",
+        "renderer": "llvmpipe (LLVM 22.1.8, 256 bits)",
+        "passed": true,
+        "log_sha256": "123c01141c60140efc1c06ddc4276da22cf720460bc9ce9a8d47f97e2832ada3"
+      }
+    ],
+    "hashes": {
+      "gpu-window-check-asan": "fcd1f58ca8e066382adb56435955ed5d2060a25c5f565e80dfb23ed3e917f881",
+      "gpu-frame-fixture-asan": "84911e5bcc3d0fa5fabc9ea91d3b304ccceaa4c3860ec3ca84b640f965094770",
+      "test-dmabuf-asan": "bd478ecafecf46599ea2f5ab0ad84a3a687157804ff840417b212736ee3fed53"
+    }
+  },
+  "window_results": [
+    {
+      "mode": "auto",
+      "source": [
+        750,
+        1624
+      ],
+      "window_driver": "wayland",
+      "windows": [
+        {
+          "drawable": [
+            375,
+            812
+          ],
+          "viewport": [
+            375,
+            812
+          ],
+          "origin": [
+            0,
+            0
+          ]
+        },
+        {
+          "drawable": [
+            640,
+            640
+          ],
+          "viewport": [
+            295,
+            640
+          ],
+          "origin": [
+            172,
+            0
+          ]
+        },
+        {
+          "drawable": [
+            300,
+            900
+          ],
+          "viewport": [
+            300,
+            649
+          ],
+          "origin": [
+            0,
+            125
+          ]
+        }
+      ],
+      "transfer": "DMA-BUF",
+      "passed": true,
+      "exported_planes": 1,
+      "fourcc": "0x34324241",
+      "modifier": "0x300000000e08014"
+    },
+    {
+      "mode": "auto",
+      "source": [
+        1125,
+        2436
+      ],
+      "window_driver": "wayland",
+      "windows": [
+        {
+          "drawable": [
+            375,
+            812
+          ],
+          "viewport": [
+            375,
+            812
+          ],
+          "origin": [
+            0,
+            0
+          ]
+        },
+        {
+          "drawable": [
+            640,
+            640
+          ],
+          "viewport": [
+            295,
+            640
+          ],
+          "origin": [
+            172,
+            0
+          ]
+        },
+        {
+          "drawable": [
+            300,
+            900
+          ],
+          "viewport": [
+            300,
+            649
+          ],
+          "origin": [
+            0,
+            125
+          ]
+        }
+      ],
+      "transfer": "DMA-BUF",
+      "passed": true,
+      "exported_planes": 1,
+      "fourcc": "0x34324241",
+      "modifier": "0x300000000e08014"
+    },
+    {
+      "mode": "software",
+      "source": [
+        750,
+        1624
+      ],
+      "window_driver": "wayland",
+      "windows": [
+        {
+          "drawable": [
+            375,
+            812
+          ],
+          "viewport": [
+            375,
+            812
+          ],
+          "origin": [
+            0,
+            0
+          ]
+        },
+        {
+          "drawable": [
+            640,
+            640
+          ],
+          "viewport": [
+            295,
+            640
+          ],
+          "origin": [
+            172,
+            0
+          ]
+        },
+        {
+          "drawable": [
+            300,
+            900
+          ],
+          "viewport": [
+            300,
+            649
+          ],
+          "origin": [
+            0,
+            125
+          ]
+        }
+      ],
+      "transfer": "CPU pixels",
+      "passed": true
+    },
+    {
+      "mode": "software",
+      "source": [
+        1125,
+        2436
+      ],
+      "window_driver": "wayland",
+      "windows": [
+        {
+          "drawable": [
+            375,
+            812
+          ],
+          "viewport": [
+            375,
+            812
+          ],
+          "origin": [
+            0,
+            0
+          ]
+        },
+        {
+          "drawable": [
+            640,
+            640
+          ],
+          "viewport": [
+            295,
+            640
+          ],
+          "origin": [
+            172,
+            0
+          ]
+        },
+        {
+          "drawable": [
+            300,
+            900
+          ],
+          "viewport": [
+            300,
+            649
+          ],
+          "origin": [
+            0,
+            125
+          ]
+        }
+      ],
+      "transfer": "CPU pixels",
+      "passed": true
+    }
+  ],
+  "descriptor_unit": {
+    "passed": true,
+    "coverage": [
+      "zero-timeout fence readiness",
+      "four-plane pitch/offset/FD attributes",
+      "64-bit modifier halves",
+      "shared and distinct descriptors",
+      "ambiguous missing descriptors",
+      "excess plane count before modifier-array query",
+      "partial export failure",
+      "closed descriptors and idempotent cleanup",
+      "legacy import without explicit modifiers"
+    ]
+  },
+  "rejected_probes": [
+    {
+      "path": "direct EGLImage handle across displays",
+      "nvidia_passed": true,
+      "llvmpipe_passed": false,
+      "reason": "LLVMPIPE full-pixel comparison failed. Explicit transfer is exercised instead."
+    },
+    {
+      "path": "hidden software window resize",
+      "requested_drawable": [
+        640,
+        640
+      ],
+      "egl_surface": [
+        375,
+        812
+      ],
+      "reason": "Requested hidden-window geometry did not reflect the EGL surface. The current diagnostic uses a shown window and verifies SDL/EGL size agreement."
+    }
+  ],
+  "source_sha256": {
+    "gpu-dmabuf.h": "2b1897017061e9554328f0deac828b601c51a7062cda391beb0aba46af1205bd",
+    "gpu-frame-fixture.h": "eff337c28060d7d40298b47ecc2881790eb5f081877d9f22a3622d882f1bb6b9",
+    "gpu-window-check.c": "d676289b98802a668a37ce91eebdf754001cf42fc63b825098be07d0c636498d",
+    "gpu-frame-check.c": "9433963138670b730195b0e915663784e409be561f39ce3c6a4a8a9813c84615",
+    "test-dmabuf.c": "1a32d4ae4d31f6e70809ec906f3d79997c32a5ee6f3facbe144dfbf438289132"
+  },
+  "remaining_validation": [
+    "Live iOS completed-display generation matching",
+    "Host-window presentation of actual iOS frames",
+    "CPU/GPU coherence for removing mandatory CPU readback",
+    "Physical Intel and AMD hardware",
+    "Multi-GPU display routing",
+    "Other native window systems and hidden/minimized behavior",
+    "Native renderer visual defects",
+    "CPU and end-to-end iPhone X performance comparison"
+  ]
+}

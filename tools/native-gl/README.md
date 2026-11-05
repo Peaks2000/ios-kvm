@@ -325,6 +325,46 @@ The API follows Khronos's
 [GLES image import specification](https://registry.khronos.org/OpenGL/extensions/OES/OES_EGL_image.txt)
 and [EGL fence specification](https://registry.khronos.org/EGL/extensions/KHR/EGL_KHR_fence_sync.txt).
 
+### Native-window image transport
+
+`gpu-dmabuf.h` exports retained GPU frames through DMA-BUF descriptors and imports
+them into a separate EGL display. A zero-timeout producer fence query returns
+pending while the copy is unfinished. Ready exports retain plane pitches,
+offsets and explicit modifiers. The caller owns close-on-exec descriptors and
+holds its frame lease until imported images and consumer GPU work retire.
+Missing plane descriptors are resolved only when one exported descriptor
+unambiguously backs the image. Other incomplete layouts return unavailable.
+
+When SDL2 development files are available, `tools/build-native-gl.py` builds
+the optional host diagnostic `.local/native-gl-api/gpu-window-check`. Run it
+under the selected profile's renderer environment. It opens a brief window,
+checks every source pixel after producer overwrite/context destruction, then
+checks portrait, square and tall window sizes. Window checks include scaling,
+phone-row orientation and black letterboxing. SDL and EGL must agree on the
+actual drawable dimensions. Add `--large` for 1125×2436, `--linger` to pause at
+each size, or `--software` to exercise explicit CPU pixel transfer under the
+software profile. The default source size is 750×1624.
+
+Both phone sizes pass ASan/UBSan checks on NVIDIA using DMA-BUF and on LLVMPIPE
+using the CPU transfer fixture. A direct EGLImage-handle probe failed its full
+pixel comparison across the two software EGL displays. The diagnostic therefore
+uses an explicit image-transfer boundary. Its visible-window checks also avoid
+treating a hidden software window's requested size as an updated EGL surface.
+The descriptor unit `.local/native-gl-api/test-dmabuf` verifies four-plane
+metadata, modifier halves, shared/distinct descriptors, invalid bounds, partial
+export failure and cleanup. Actual GPU exports here used one plane.
+
+These checks use synthetic host-rendered images. Live iOS presentation still
+requires an exact completed-display generation key and CPU/GPU coherence before
+mandatory CPU readback can be removed. Physical Intel/AMD hardware, multi-GPU
+window routing and end-to-end performance remain unverified. Reviewed results
+are in `evidence/gpu-window-20261105.json`.
+
+The transport uses Khronos's
+[DMA-BUF export API](https://registry.khronos.org/EGL/extensions/MESA/EGL_MESA_image_dma_buf_export.txt),
+[DMA-BUF import API](https://registry.khronos.org/EGL/extensions/EXT/EGL_EXT_image_dma_buf_import.txt)
+and [modifier API](https://registry.khronos.org/EGL/extensions/EXT/EGL_EXT_image_dma_buf_import_modifiers.txt).
+
 ### Completed display requests
 
 The matching kernel exports read-only `kern.ios_kvm_display_state`. The standalone

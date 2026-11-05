@@ -20,6 +20,11 @@ flags = ['-O2', '-Wall', '-Wextra', '-Werror',
 libs = shlex.split(subprocess.check_output(['pkg-config', '--cflags', '--libs', 'egl', 'glesv2'], text=True))
 subprocess.run(['cc', *flags, str(src / 'server.c'), '-o', str(out / 'server'), *libs, '-pthread'], check=True)
 subprocess.run(['cc', *flags, str(src / 'gpu-frame-check.c'), '-o', str(out / 'gpu-frame-check'), *libs, '-pthread'], check=True)
+subprocess.run(['cc', *flags, str(src / 'test-dmabuf.c'), '-o', str(out / 'test-dmabuf'), *libs, '-pthread'], check=True)
+(out / 'gpu-window-check').unlink(missing_ok=True)
+if subprocess.run(['pkg-config', '--exists', 'sdl2']).returncode == 0:
+    sdl = shlex.split(subprocess.check_output(['pkg-config', '--cflags', '--libs', 'sdl2'], text=True))
+    subprocess.run(['cc', *flags, str(src / 'gpu-window-check.c'), '-o', str(out / 'gpu-window-check'), *libs, *sdl, '-pthread'], check=True)
 clang = ['clang', '-target', 'arm64-apple-ios16.0', '-isysroot', str(sdk),
          '-fuse-ld=lld', *flags, '-I', str(mesa / 'include')]
 library = out / 'libios-kvm-native-gl.dylib'
