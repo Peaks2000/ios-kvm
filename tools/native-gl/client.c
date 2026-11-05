@@ -6,12 +6,14 @@
 #include "pixel-format.h"
 #include "protocol.h"
 #include "readback.h"
+#include "render-state.h"
 #include "schema.h"
 #include "vertices.h"
 #include <GLES3/gl31.h>
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <stdint.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -53,6 +55,7 @@ struct ios_kvm_native_gl_context {
   unsigned vertex_array_count;
   GLint array_buffer, vertex_array, max_attributes;
   int array_known, vertex_array_known, primitive_restart;
+  struct ng_render_state render_state;
 };
 static pthread_key_t ng_key;
 static pthread_once_t ng_once = PTHREAD_ONCE_INIT;
@@ -304,6 +307,7 @@ static void ng_call(uint32_t op, const void *data, size_t size, void *output,
 static int ng_shared_try_read(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum,
                               void *);
 #include "client-pixel-state.h"
+#include "client-state.h"
 static void ng_vertices_delete(unsigned, GLsizei, const GLuint *);
 static int ng_vertex_pointer(GLuint, GLint, GLenum, GLboolean, GLsizei,
                              const void *);

@@ -8,7 +8,7 @@
 #error "native GL wire encoding requires a little-endian peer"
 #endif
 #define NG_MAGIC UINT32_C(0x4e474c33)
-#define NG_VERSION 8
+#define NG_VERSION 9
 #define NG_FEATURE_SHARED_READ UINT32_C(1)
 /* Only a batch ending in retained NG_READ_SHARED may suppress its reply.
  * Completion and errors for that read are published through the kernel cell. */
@@ -76,7 +76,8 @@ enum {
   NG_INDEX_MAX,
   NG_LOCAL_ERROR,
   NG_LABEL_SET,
-  NG_LABEL_GET
+  NG_LABEL_GET,
+  NG_GET_RENDER_STATE
 };
 /* No process pointers or function addresses are accepted on the wire. */
 #endif

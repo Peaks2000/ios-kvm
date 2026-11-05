@@ -67,6 +67,7 @@ static GLuint texture(unsigned w, unsigned h) {
 #include "shared-check.h"
 #include "shared-bench.h"
 #include "pixel-state-check.h"
+#include "render-state-check.h"
 #include "format-check.h"
 #include "vertex-check.h"
 #include "label-check.h"
@@ -424,6 +425,7 @@ int main(void) {
   ios_kvm_native_gl_disconnect();
   explicit_contexts();
   pixel_state_context_check();
+  render_state_check();
   puts("Native GL general API check PASSED (20 frames, padded input/output, "
        "shader errors, independent thread contexts)");
   return 0;

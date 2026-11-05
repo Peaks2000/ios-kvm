@@ -1,6 +1,7 @@
 /* Explicit GLES context lifetime for the future EAGL adapter. */
 #ifndef IOS_KVM_NATIVE_GL_CONTEXT_H
 #define IOS_KVM_NATIVE_GL_CONTEXT_H
+#include <stdint.h>
 struct ios_kvm_native_gl_context;
 /* Currently GLES3 only. Unsupported versions or failed handshakes return NULL.
  */
@@ -18,4 +19,6 @@ int ios_kvm_native_gl_release_deferred(void);
 int ios_kvm_native_gl_context_destroy(
     struct ios_kvm_native_gl_context *context);
 void ios_kvm_native_gl_disconnect(void);
+/* Diagnostic count of fused driver state requests across this process. */
+uint64_t ios_kvm_native_gl_state_fetches(void);
 #endif

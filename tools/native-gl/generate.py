@@ -40,6 +40,13 @@ schema = int.from_bytes(hashlib.sha256(json.dumps(prototypes, sort_keys=True).en
 destination.mkdir(parents=True, exist_ok=True)
 (destination / 'schema.h').write_text(f'#define NG_SCHEMA UINT64_C(0x{schema:016x})\n')
 client, server = [], []
+state_groups = {
+    'glViewport': 'VIEWPORT', 'glScissor': 'SCISSOR',
+    'glColorMask': 'COLOR_MASK', 'glClearColor': 'CLEAR_COLOR',
+    'glBlendFunc': 'BLEND_FUNC', 'glBlendFuncSeparate': 'BLEND_FUNC',
+    'glBlendEquation': 'BLEND_EQUATION',
+    'glBlendEquationSeparate': 'BLEND_EQUATION',
+}
 for opcode, (name, (ret, params)) in enumerate(sorted(prototypes.items()), 1):
     decl = ', '.join(f'{t} {n}' for t, n in params) or 'void'
     client.append(f'{ret} {name}({decl}) {{')
@@ -47,6 +54,8 @@ for opcode, (name, (ret, params)) in enumerate(sorted(prototypes.items()), 1):
         client.append(' if(ng_client_draw(0,mode,first,count,0,NULL)) return;')
     elif name == 'glDrawArraysInstanced':
         client.append(' ng_client_instanced_guard();')
+    elif name == 'glIsEnabled':
+        client.append(' GLboolean cached; if(ng_state_enabled(cap,&cached)) return cached;')
     client.append(f' uint64_t args[{max(1,len(params))}]={{0}};')
     for index, (ctype, pname) in enumerate(params):
         client.append(f' _Static_assert(sizeof({ctype})<=8,"scalar size"); memcpy(args+{index},&{pname},sizeof({pname}));')
@@ -69,6 +78,9 @@ for opcode, (name, (ret, params)) in enumerate(sorted(prototypes.items()), 1):
         client.append(' ng_vertex_divisor(index,divisor);')
     elif name in ('glEnable', 'glDisable'):
         client.append(f' if(cap==GL_PRIMITIVE_RESTART_FIXED_INDEX) ng_current()->primitive_restart={int(name == "glEnable")};')
+        client.append(' if(ng_state_cap_bit(cap)) ng_state_invalidate(NG_STATE_CAPS);')
+    if name in state_groups:
+        client.append(f' ng_state_invalidate(NG_STATE_{state_groups[name]});')
     client.append('}')
     server.append(f'case {opcode}: {{')
     server.append(f' if(size!={len(params)*8}) return -1;')

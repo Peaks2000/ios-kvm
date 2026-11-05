@@ -228,7 +228,7 @@ errors. The default shared mode waits for the normal RPC acknowledgement.
 without its socket reply. The host executes each context's stream in order and
 publishes success or failure in the existing kernel completion cell. A CPU
 consumer must lock the IOSurface before accessing its pixels. Untagged reads,
-queries and `glFinish` keep their synchronous contracts. Wire version 8 rejects
+queries and `glFinish` keep their synchronous contracts. Wire version 9 rejects
 older peers, and only batches ending in a retained read may suppress a reply.
 The copied fallback remains available before a kernel hold is obtained.
 A failed request after obtaining a kernel hold never
@@ -253,6 +253,57 @@ Completed-pixel times were 11.72/9.87 ms and 22.47/19.67 ms, respectively.
 The host used ASan/UBSan with driver leak detection disabled. Raw samples and
 binary hashes are in `evidence/async-readback-nvidia-20261105.json`.
 Desktop frame times and physical AMD/Intel hardware remain unverified here.
+
+### Fused render-state queries
+
+The native proxy keeps driver-observed viewport, scissor, colour mask, clear
+colour, blend functions/equations and five core capability enables per context.
+The first supported query fetches these groups in one authenticated request.
+Each relevant setter invalidates its group, including rejected setters. The
+next query obtains the driver's actual values, including clamping, and preserves
+pending GL errors. Unchanged queries use the local snapshot. Other state and
+numeric conversions retain their existing driver-query paths.
+
+Set `IOS_KVM_NATIVE_RENDER_STATE_CACHE=0` to bypass this cache. Temporary desktop
+trials accept `--render-state-cache 0` or `1`. The general API diagnostic compares
+both paths with identical state, checks every setter independently, verifies
+context isolation and output bounds, and counts actual fused requests. Its
+64-group query timing measures this workload alone. Desktop animation requires
+a separate comparison.
+
+The November 5 ASan/UBSan checks pass on NVIDIA and LLVMPIPE, including the
+isolated EAGL bridge, context teardown races and retained asynchronous reads.
+The NVIDIA query workload took 3.665639 seconds with driver queries and
+0.003346 seconds with the populated cache. A fixed 16-swipe desktop observation
+completed 54 presentations with caching, compared with 37 and 39 in the two
+disabled trials, over approximately 35 seconds each. A second enabled trial was
+excluded because another validation process overlapped it. Completed requests
+can contain repeated content. Unique-frame FPS, input latency and physical
+Intel/AMD performance still need measurement. Visual defects remain present.
+The reviewed receipts and binary hashes are in
+`evidence/render-state-20261105.json`.
+
+### Completed display requests
+
+The matching kernel exports read-only `kern.ios_kvm_display_state`. The standalone
+`display-state` guest diagnostic prints its versioned, 208-byte snapshot as JSON.
+It includes the completed request sequence, swap ID, dimensions, four layer
+surface IDs and raw source/destination rectangles. The snapshot is copied under
+the existing display lock. Reads before driver initialization or the first frame
+return ENXIO or EAGAIN. A write is rejected with EPERM.
+
+This records the last completed presentation request. The referenced source
+surface may subsequently change or disappear. Compare sequences around a
+capture before treating its source as stable. The older enabled-layer log only
+changes when the layer mask changes and cannot identify every presented surface.
+Opt-in native tracing also correlates retained surface IDs and producer PIDs
+with host readback completion cells and sequences. Copied reads report zero for
+the cell and sequence.
+
+The readiness check allows up to five seconds for outstanding retained reads to
+drain. The counter is shared with the ordinary rendering backend, so a transient
+nonzero value can reflect normal GPU work. A persistent hold still prevents a
+new isolated trial.
 
 Run the retained-surface and isolated EAGL checks with `--shared-ram --eagl`.
 The general shared-surface check validates changing spatial pixels and padding

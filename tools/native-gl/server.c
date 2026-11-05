@@ -4,6 +4,7 @@
 #define _GNU_SOURCE 1
 #include "io.h"
 #include "protocol.h"
+#include "render-state.h"
 #include "pixel-format.h"
 #include "schema.h"
 #include <EGL/egl.h>
@@ -31,6 +32,7 @@ static int ng_output(void *output, size_t capacity, size_t *used,
   return 0;
 }
 #include "server-errors.h"
+#include "server-state.h"
 #include "server-trace.h"
 #include "server-labels.h"
 #include "server-pointers.h"
@@ -43,6 +45,8 @@ static int ng_dispatch(uint32_t opcode, const uint8_t *data, size_t size,
   switch (opcode) {
 #include "server-scalars.h"
   default:
+    if (opcode == NG_GET_RENDER_STATE)
+      return ng_render_state_reply(size, output, capacity, used);
     if (opcode==NG_LABEL_SET || opcode==NG_LABEL_GET)
       return ng_label_dispatch(opcode,data,size,output,capacity,used);
     if (opcode >= NG_CLIENT_DRAW && opcode <= NG_LOCAL_ERROR)

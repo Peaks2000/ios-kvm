@@ -1,4 +1,6 @@
 void glGetFloatv(GLenum pname, GLfloat *params) {
+  if (ng_state_float(pname, params))
+    return;
   GLfloat values[4096];
   uint64_t a[] = {pname};
   size_t n = ng_blob(NG_GET_FLOAT, a, 1, NULL, 0, values, sizeof(values), 1);

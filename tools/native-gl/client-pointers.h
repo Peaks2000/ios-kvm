@@ -108,6 +108,8 @@ void glDrawElements(GLenum mode, GLsizei count, GLenum type,
   ng_blob(NG_DRAW_ELEMENTS, a, 4, NULL, 0, NULL, 0, 0);
 }
 void glGetIntegerv(GLenum pname, GLint *params) {
+  if (ng_state_integer(pname, params))
+    return;
   GLint values[4096];
   uint64_t a[] = {pname};
   size_t n = ng_blob(NG_GET_INTEGER, a, 1, NULL, 0, values, sizeof(values), 1);

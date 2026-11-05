@@ -99,6 +99,8 @@ cases = [
     ('truncated debug label', record(0x10025, struct.pack('<3Q', 0x1702, 0, 4) + bytes(3)), 0, 1, None, True),
     ('oversized debug label', record(0x10025, struct.pack('<3Q', 0x1702, 0, 65537)), 0, 1, None, True),
     ('undersized label output', record(0x10026, struct.pack('<4Q', 0x1702, 0, 0, 0)), 4, 1, None, True),
+    ('render state with unexpected input', record(0x10027, bytes(8)), 96, 1, None, True),
+    ('undersized render state output', record(0x10027), 95, 1, None, True),
 ]
 for label, commands, capacity, seq, declared, reply in cases:
     with authenticated() as s:

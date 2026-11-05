@@ -25,6 +25,8 @@ p.add_argument('--output', type=Path, required=True)
 p.add_argument('--port', type=int, default=6777)
 p.add_argument('--seconds', type=int, default=60, choices=range(15, 301), metavar='15..300')
 p.add_argument('--async-readback', action='store_true')
+p.add_argument('--render-state-cache', choices=('0', '1'), default='1',
+               help='Control fused driver-state queries for comparison trials')
 p.add_argument('--copied-readback', action='store_true', help='Use the synchronous socket readback control')
 a = p.parse_args()
 if a.copied_readback and a.async_readback:
@@ -93,15 +95,20 @@ def config_write(config, log):
     remote(command, stdout=log, stderr=log, check=True)
 
 def pending_surfaces():
-    value = int(remote('/var/jb/usr/sbin/sysctl -n kern.ios_kvm_pending_surfaces',
-                       capture_output=True, text=True, check=True).stdout.strip())
-    if not 0 <= value <= 128:
-        raise RuntimeError('Invalid retained-surface counter')
-    return value
+    deadline = time.monotonic() + 5
+    while True:
+        value = int(remote('/var/jb/usr/sbin/sysctl -n kern.ios_kvm_pending_surfaces',
+                           capture_output=True, text=True, check=True).stdout.strip())
+        if not 0 <= value <= 128:
+            raise RuntimeError('Invalid retained-surface counter')
+        if not value or time.monotonic() >= deadline:
+            return value
+        time.sleep(.05)
 
 receipt = {'scope': 'Temporary native compositor trial; not desktop compatibility or performance proof',
            'selected': selected, 'seconds_requested': a.seconds, 'original_restored': False,
            'async_readback_requested': a.async_readback,
+           'render_state_cache': a.render_state_cache,
            'copied_readback_requested': a.copied_readback}
 server = None
 guest = None
@@ -127,6 +134,7 @@ with tempfile.TemporaryDirectory(prefix='native-desktop-', dir=root / '.local') 
                     '-DIOS_KVM_NATIVE_PORT=' + json.dumps(str(a.port)),
                     '-DIOS_KVM_NATIVE_ASYNC_MODE=' + json.dumps(str(int(a.async_readback))),
                     '-DIOS_KVM_NATIVE_SHARED_MODE=' + json.dumps(str(int(not a.copied_readback))),
+                    '-DIOS_KVM_NATIVE_RENDER_STATE_CACHE=' + json.dumps(a.render_state_cache),
                     '-install_name', mobile + '/' + injection.name,
                     '-framework', 'CoreFoundation', '-framework', 'IOKit', '-lobjc',
                     str(root / 'vendor/hakios/userland/src/inject.c'),
@@ -230,6 +238,7 @@ with tempfile.TemporaryDirectory(prefix='native-desktop-', dir=root / '.local') 
                        native_injection_seen='temporary native compositor experiment UID501' in output,
                        native_context_seen='native GLES client:' in host_output,
                        async_submission_seen='native GLES asynchronous retained submission active' in output,
+                       render_state_cache_seen='native GLES fused render state cache active' in output,
                        actual_host_renderers=sorted(set(line.split(': ', 1)[1] for line in host_output.splitlines()
                                                         if line.startswith('native GLES client: '))))
         if not receipt['native_injection_seen'] or not receipt['native_context_seen']:
