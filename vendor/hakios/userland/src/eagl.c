@@ -2990,7 +2990,13 @@ group_draw_end(struct eagl *e, const GLint enabled[4])
 	glUseProgram(e->program);
 }
 
-static bool
+enum plain_draw_action {
+	PLAIN_DRAW_NATIVE,
+	PLAIN_DRAW_EMULATED,
+	PLAIN_DRAW_SKIP,
+};
+
+static enum plain_draw_action
 plain_draw_begin(struct eagl *e, GLint enabled[4])
 {
 	static const GLfloat identity[16] = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 };
@@ -3009,7 +3015,7 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 	}
 	clear_now(e);
 	if (e->program != 0) {
-		return false;
+		return PLAIN_DRAW_NATIVE;
 	}
 	if (vblur_on && reads_what_it_writes(e) && function_given[FUNCTION_VARIABLE_DOWNSAMPLE] != 0) {
 		static unsigned told;
@@ -3021,7 +3027,7 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 			    (int)function_values[FUNCTION_VARIABLE_DOWNSAMPLE][0] + 1, e->bound[0],
 			    (int)function_values[FUNCTION_VARIABLE_DOWNSAMPLE][0]);
 		}
-		return false;
+		return PLAIN_DRAW_SKIP;
 	}
 	/*
 	 * Nor is any other draw with no program that would read the very texture it draws into. The
@@ -3034,7 +3040,7 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 	if (!plain_draws || (plain_draws == 1 && e->bound[0] == 0) || reads_what_it_writes(e) ||
 	    (e->colour != 0 && e->colour == e->bound[0])) {
 		census_draw(e, function, CENSUS_NOT_DRAWN);
-		return false;
+		return PLAIN_DRAW_SKIP;
 	}
 	if (function < 90 && !said[function]) {
 		said[function] = 1;
@@ -3063,7 +3069,7 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 		}
 		if (vibrant && e->no_vibrant) {
 			census_draw(e, function, CENSUS_NOT_DRAWN);     /* better nothing than the mask as a picture */
-			return false;
+			return PLAIN_DRAW_SKIP;
 		}
 		census_draw(e, function, vibrant ? CENSUS_VIBRANT : CENSUS_MASKING);
 		program = vibrant ? e->vibrant : e->masking;
@@ -3081,14 +3087,14 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 				glEnableVertexAttribArray(i);
 			}
 		}
-		return true;
+		return PLAIN_DRAW_EMULATED;
 	}
 	if (vblur_on && e->bound[0] != 0 && e->bound[1] != 0 && function == FUNCTION_VARIABLE_BLUR && function_given[function] >= 2) {
 		struct vblur_chain *chain = vblur_chain_of(e, e->bound[0], false);
 
 		if (chain != NULL && chain->made > 0 && vblur_draw_begin(e, chain, enabled)) {
 			census_draw(e, function, CENSUS_VBLUR);
-			return true;
+			return PLAIN_DRAW_EMULATED;
 		}
 	}
 	if (e->bound[0] != 0 && plain_draws != 3 && function == FUNCTION_SHADOW_BLUR && function_given[function] == 8) {
@@ -3107,7 +3113,7 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 				glEnableVertexAttribArray(i);
 			}
 		}
-		return true;
+		return PLAIN_DRAW_EMULATED;
 	}
 	if (e->bound[0] != 0 && plain_draws != 3 && function == FUNCTION_DOWNSAMPLE_8 && function_given[function] == 8) {
 		if (e->box == 0) {
@@ -3125,7 +3131,7 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 				glEnableVertexAttribArray(i);
 			}
 		}
-		return true;
+		return PLAIN_DRAW_EMULATED;
 	}
 	if (e->bound[0] != 0 && e->bound[1] != 0) {
 		glActiveTexture(GL_TEXTURE0 + 1);
@@ -3169,7 +3175,7 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 		    enabled[0], enabled[1], enabled[2], position ? (double)position[0] : 0, position ? (double)position[1] : 0,
 		    where ? (double)where[0] : 0, where ? (double)where[1] : 0);
 	}
-	return true;
+	return PLAIN_DRAW_EMULATED;
 }
 
 static void
@@ -3265,7 +3271,7 @@ my_glDrawArrays(void *context, GLenum mode, GLint first, GLsizei count)
 {
 	struct eagl *e = context;
 	GLint enabled[4] = { 1, 1, 1, 1 };
-	bool plain;
+	enum plain_draw_action action;
 
 	EAGL_ENTER(e, 0x210);
 	drawing(e);
@@ -3285,9 +3291,11 @@ my_glDrawArrays(void *context, GLenum mode, GLint first, GLsizei count)
 		glDrawArrays(mode, first, count);
 		group_draw_end(e, enabled);
 	} else {
-		plain = plain_draw_begin(e, enabled);
-		glDrawArrays(mode, first, count);
-		if (plain) {
+		action = plain_draw_begin(e, enabled);
+		if (action != PLAIN_DRAW_SKIP) {
+			glDrawArrays(mode, first, count);
+		}
+		if (action == PLAIN_DRAW_EMULATED) {
 			plain_draw_end(e, enabled);
 		}
 	}
@@ -3305,7 +3313,7 @@ my_glDrawElements(void *context, GLenum mode, GLsizei count, GLenum type, const 
 {
 	struct eagl *e = context;
 	GLint enabled[4] = { 1, 1, 1, 1 };
-	bool plain;
+	enum plain_draw_action action;
 
 	EAGL_ENTER(e, 0x220);
 	drawing(e);
@@ -3325,9 +3333,11 @@ my_glDrawElements(void *context, GLenum mode, GLsizei count, GLenum type, const 
 		glDrawElements(mode, count, type, indices);
 		group_draw_end(e, enabled);
 	} else {
-		plain = plain_draw_begin(e, enabled);
-		glDrawElements(mode, count, type, indices);
-		if (plain) {
+		action = plain_draw_begin(e, enabled);
+		if (action != PLAIN_DRAW_SKIP) {
+			glDrawElements(mode, count, type, indices);
+		}
+		if (action == PLAIN_DRAW_EMULATED) {
 			plain_draw_end(e, enabled);
 		}
 	}

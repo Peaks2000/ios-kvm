@@ -183,6 +183,17 @@ restore/cleanup receipts. The copied control renders all icons but misses some
 text. Shared controls show the lower-right defect. Target-matched texture/state
 comparisons remain necessary before attributing that difference to transfer.
 
+EAGL draw preparation distinguishes an existing shader, an emulated shader and
+a suppressed CoreAnimation operation. Both array and indexed wrappers honor the
+suppressed result. Previously the boolean result also represented an existing
+shader, so the caller forwarded operations marked as skipped with program zero.
+The [OpenGL ES specification](https://registry.khronos.org/OpenGL/specs/es/2.0/es_full_spec_2.0.pdf)
+leaves shader execution results undefined in that state. Run
+`python3 tools/test-eagl-draw-policy.py` to compile the actual wrappers against
+instrumented draw calls. It checks native/emulated/skipped/group paths for both
+draw APIs, including cleanup. Isolated NVIDIA and LLVMPIPE EAGL suites pass.
+Desktop visual and performance effects require their own validation.
+
 The guest diagnostic creates its own shaders, textures, vertex/index buffers and
 framebuffer. Each rendered frame also checks real native fence completion and
 bounded status queries before checking its pixels. It validates every active pixel/channel (tolerance 1) and exact
